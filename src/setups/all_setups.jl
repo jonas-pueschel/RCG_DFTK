@@ -1,0 +1,8 @@
+include("./silicon_setup.jl")
+include("./iron_setup.jl")
+include("./gp1D_setup.jl")
+include("./gp2D_setup.jl")
+include("./H2_setup.jl")
+include("./TiO2_setup.jl")
+include("./GaAs_setup.jl")
+include("./graphene_setup.jl")
