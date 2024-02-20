@@ -52,5 +52,4 @@ end
     scfres_scf = self_consistent_field(basis; tol, ψ = ψ1);print("");
 end
 
-scfres_scf
 #heatmap(scfres_rcg1.ρ[:, :, 1, 1], c=:blues)
