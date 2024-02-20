@@ -17,6 +17,6 @@ function TiO2_setup(; Ecut = 25)
     kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
     #fft_size = compute_fft_size(model, 25; supersampling=ss)
-    basis = PlaneWaveBasis(model; Ecut=25, kgrid)#, fft_size=fft_size)
+    basis = PlaneWaveBasis(model; Ecut, kgrid)#, fft_size=fft_size)
     return [model, basis]
 end
