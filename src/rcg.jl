@@ -49,8 +49,13 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
             Yrf = [ξ[ik] / R[ik] for ik = 1:Nk]
             Ge = [ψ[ik]'Yrf[ik] for ik = 1:Nk]
             skew = [LowerTriangular(deepcopy(Ge[ik])) for ik = 1:Nk]
-            skew = [skew[ik]' - skew[ik] for ik = 1:Nk]
-            return [ψ[ik] * skew[ik] + Yrf[ik] - ψ[ik] * Ge[ik] for ik = 1:Nk]
+            skew = [skew[ik] - skew[ik]' for ik = 1:Nk]
+            for ik = 1:Nk
+                for j = 1:size(skew[ik])[1]
+                    skew[ik][j,j] = 0.5 * skew[ik][j,j] 
+                end
+            end
+            return [ ψ[ik] * (skew[ik] - Ge[ik])  + Yrf[ik] for ik = 1:Nk]
         elseif (previous_dir)
             # special transport if the previous direction is transported
             if (transport == "diff-ret")
@@ -122,6 +127,13 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
             #println(norm(ψ .- (H * Hinv_ψ), 2))
             Ga = [ψ[ik]'Hinv_ψ[ik] for ik = 1:Nk]
             return [ ψ[ik] - Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
+        elseif (options.gradient== "ea2")
+            ψ0 = [ψ[ik] / Λ[ik] for ik = 1:Nk]
+            Hinv_ψ = solve_H_naive(ψ0, H, ψ, options)
+            #check if inverse is correct
+            #println(norm(ψ .- (H * Hinv_ψ), 2))
+            Ga = [ψ[ik]'Hinv_ψ[ik] for ik = 1:Nk]
+            return [ ψ[ik] - Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
         elseif (options.gradient == "L2")
             #classic gradient
             return res;
@@ -136,7 +148,8 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
             η_Ω_η = [tr(η[ik]'Ω_η[ik]) for ik in 1:Nk]
             K_η = DFTK.apply_K(basis, η, ψ, ρ, occupation)
             η_K_η = [tr(η[ik]'K_η[ik]) for ik in 1:Nk]
-            return [real(η_Ω_η[ik] + η_K_η[ik]) > 0 ? real(- desc[ik]/(η_Ω_η[ik] + η_K_η[ik])) : options.τ_0_max/norm(η[ik]) for ik in 1:Nk]
+            #return [real(η_Ω_η[ik] + η_K_η[ik]) > 0 ? real(- desc[ik]/(η_Ω_η[ik] + η_K_η[ik])) : options.τ_0_max for ik in 1:Nk]
+            return [min(real(- desc[ik]/abs(η_Ω_η[ik] + η_K_η[ik])) , options.τ_0_max) for ik in 1:Nk]
         elseif (options.step_size == "aH")
             Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)] 
             η_Ω_η = [tr(η[ik]'Ω_η[ik]) for ik in 1:Nk]
@@ -155,23 +168,23 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
         if (options.β_cg == "FR")
             return [real(gamma[ik]/gamma_old[ik]) for ik = 1:Nk]
         elseif (options.β_cg == "HS")
-            return [real((gamma[ik] - tr(grad[ik]'res_old[ik]))/(tr(T_η_old[ik]'res[ik]) - tr(η_old[ik]'res_old[ik]))) for ik = 1:Nk]
+            return [real((gamma[ik] - tr(T_grad_old[ik]'res[ik]))/(tr(T_η_old[ik]'res[ik]) - tr(η_old[ik]'res_old[ik]))) for ik = 1:Nk]
         elseif (options.β_cg == "PRP")
-            return [real((gamma[ik] - tr(grad[ik]'res_old[ik]))/gamma_old[ik]) for ik = 1:Nk]
+            return [real((gamma[ik] - tr(T_grad_old[ik]'res[ik]))/gamma_old[ik]) for ik = 1:Nk]
         elseif (options.β_cg == "DY")
             return [real(gamma[ik]/(tr(T_η_old[ik]'res[ik]) - tr(η_old[ik]'res_old[ik]))) for ik = 1:Nk]
         elseif (options.β_cg == "D")
             return [0 for ik = 1:Nk] #TODO
         elseif (options.β_cg == "FR-PRP")
-            return [max(min(gamma[ik], (gamma[ik] - real(tr(grad[ik]'res_old[ik]))))/gamma_old[ik], 0) for ik = 1:Nk]
+            return [max(min(gamma[ik], (gamma[ik] - real(tr(T_grad_old[ik]'res[ik]))))/gamma_old[ik], 0) for ik = 1:Nk]
         elseif (options.β_cg == "HS-DY")
             temp = [real(tr(T_η_old[ik]'res[ik]) - tr(η_old[ik]'res_old[ik])) for ik = 1:Nk ]
-            return [max(min(real((gamma[ik] - tr(grad[ik]'res_old[ik]))/temp[ik] - tr(η_old[ik]'res_old[ik])), real(gamma[ik]/temp[ik])), 0) for ik = 1: Nk]
+            return [max(min(real((gamma[ik] - tr(T_grad_old[ik]'res[ik]))/temp[ik] - tr(η_old[ik]'res_old[ik])), real(gamma[ik]/temp[ik])), 0) for ik = 1: Nk]
         elseif (options.β_cg == "HZ")
             temp1 = [real(tr(T_η_old[ik]'res[ik]) - tr(η_old[ik]'res_old[ik])) for ik = 1:Nk]
             # res'res is calculted twice (for res and res_old), this could be optimized
-            temp2 = [real(tr(res[ik]'res[ik]) - 2 * tr(T_res_old[ik]'res[ik]) + tr(res_old[ik]'res_old[ik])/temp1[ik]) for ik = 1:Nk]
-            return [(gamma[ik] - real(tr(grad[ik]'res_old[ik]) - tr(T_η_old[ik]'res[ik]) * options.μ * temp2[ik]))/temp1[ik] for ik = 1:Nk]        
+            temp2 = [real(gamma[ik] - 2 * tr(T_grad_old[ik]'res[ik]) + gamma_old[ik]/temp1[ik]) for ik = 1:Nk]
+            return [(gamma[ik] - real(tr(T_grad_old[ik]'res[ik]) - tr(T_η_old[ik]'res[ik]) * options.μ * temp2[ik]))/temp1[ik] for ik = 1:Nk]        
         else
             throw(DomainError(options.β_cg, "invalid β_cg"))
         end
@@ -192,6 +205,7 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
 
     # number of kpoints and occupation
     Nk = length(basis.kpoints)
+    σ = options.gradient_options.shift
 
     occupation = [filled_occ * ones(T, n_bands) for ik = 1:Nk]
 
@@ -221,7 +235,8 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
 
     
     gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
-    gamma_old = 0;
+    #gamma = [real(tr(grad[ik]' * (H.blocks[ik] * grad[ik] + σ * grad[ik]))) for ik = 1:Nk]
+    gamma_old = nothing;
     desc = - gamma
     η = - grad
 
@@ -233,7 +248,7 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
     T_η_old = nothing
     res_old = nothing
     grad_old = nothing
-    T_res_old = nothing
+    T_grad_old = nothing
     ψ_next = nothing
     R = nothing
     τ = nothing
@@ -243,7 +258,6 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
     converged = false
     while n_iter < maxiter
         n_iter += 1
-
         #save old psi
         ψ_old = ψ
 
@@ -276,9 +290,11 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
             end
         end
 
+        #print(real(desc[1]))
+        #print(τ)
 
         #update backtrack parameters
-        q = τ[1] * q + 1;
+        q = options.step_size_options.α * q + 1;
         c = (1-1/q)*c + 1/q * energies.total;
 
 
@@ -299,14 +315,16 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
         grad_old = deepcopy(grad)
         η_old = η;
 
-        Hψ = [H.blocks[ik] * ψk for (ik, ψk) in enumerate(ψ)]
+        Hψ = [H.blocks[ik] * ψk + σ * ψk for (ik, ψk) in enumerate(ψ)]
         Λ = [ψ[ik]'Hψ[ik] for ik = 1:Nk]
         Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik = 1:Nk]
         res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
         gamma_old = deepcopy(gamma)
         grad = calculate_gradient(options.gradient_options);
+
         gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
+        #gamma = [real(tr(grad[ik]' * (H.blocks[ik] * grad[ik] + σ * grad[ik]))) for ik = 1:Nk]
 
         norm2res = 0
         for ik = 1:Nk
@@ -325,7 +343,12 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
         if (options.do_cg)
 
             #tangent space transport (projection)
-            T_res_old = tangent_space_transport(res_old, options, previous_dir = false)
+            T_grad_old = tangent_space_transport(grad_old, options, previous_dir = false)
+            
+            #check if transported dir is in tangent space
+            #GGG = [ψ[ik]'T_grad_old[ik] for ik = 1:Nk]
+            #print(sum([norm(GGG[ik]' + GGG[ik]) for ik = 1:Nk]))
+
             #in theory this may also be saved on η
             T_η_old = tangent_space_transport(η, options, previous_dir = true)
 

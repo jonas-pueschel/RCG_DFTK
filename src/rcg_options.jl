@@ -2,11 +2,11 @@ mutable struct StepSizeOptions
     step_size::String
     #backtracking
     bt_iter::UInt
-    α::Float32
-    β::Float32
-    δ::Float32
-    τ_const::Float32
-    τ_0_max::Float32
+    α::Float64
+    β::Float64
+    δ::Float64
+    τ_const::Float64
+    τ_0_max::Float64
 end
 
 mutable struct  GradientOptions 
@@ -15,13 +15,14 @@ mutable struct  GradientOptions
     prec
     #ea_options
     inner_iter::UInt
+    shift::Float64
 end
 
 mutable struct RcgOptions
     do_cg::Bool
     retraction::String
     β_cg::String
-    μ::Float32
+    μ::Float64
     transport_res::String
     transport_η::String
     step_size_options::StepSizeOptions
@@ -36,8 +37,8 @@ function default_options(basis, ψ)
         DFTK.precondprep!(Pks[ik], ψ[ik])
     end
 
-    step_size_options = StepSizeOptions("eH", 10, 0.95, 1e-4, 0.5, 0.0, 100.0)
-    gradient_options = GradientOptions("H1", Pks, 0)
+    step_size_options = StepSizeOptions("eH", 10, 0.95, 1e-4, 0.5, 0.0, 5.0)
+    gradient_options = GradientOptions("H1", Pks, 10, 0.0)
     return RcgOptions(
         true, 
         "polar",

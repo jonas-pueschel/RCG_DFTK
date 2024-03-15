@@ -1,7 +1,6 @@
 function  graphene_setup(;Ecut = 15)
     L = 20  # height of the simulation box
     kgrid = [6, 6, 1]
-    Ecut = 15
 
 
     # Define the geometry and pseudopotential
