@@ -9,7 +9,7 @@ mutable struct StepSizeOptions
     τ_0_max::Float64
 end
 
-mutable struct  GradientOptions 
+mutable struct GradientOptions 
     gradient::String
     #Preconditioner
     prec

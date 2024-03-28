@@ -31,7 +31,6 @@ function solve_H( ψ0, H, b, options::GradientOptions)
 
     
     res = Krylov.minres(J, rhs, x0; M, itmax = Int64(options.inner_iter))
-
     return unpack(res[1])
 end
 
