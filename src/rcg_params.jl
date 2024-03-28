@@ -43,18 +43,19 @@ end
     const h_solver   #type of solver for H 
 end
 
-function get_default_EA_gradient(basis::PlaneWaveBasis{T}) where {T}
+function get_default_EA_gradient(basis::PlaneWaveBasis{T}, ψ0) where {T}
     Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
     for ik = 1:length(Pks)
-        DFTK.precondprep!(Pks[ik], ψ[ik])
+        DFTK.precondprep!(Pks[ik], ψ0[ik])
     end
     return EAGradient(
+        nothing,
         5,
         1e-16,
         1e-16,
         Pks,
         Krylov.minres,
-        AbstractHSolver()
+        SequentialHSolver()
     )
 end
 
@@ -64,6 +65,7 @@ struct ParallelHSolver <: AbstractHSolver end
 function solve_H(lin_solver, ψ0, H, b, itmax, atol, rtol, Pks, ::ParallelHSolver)
     Nk = size(ψ0)[1]
     T = Base.Float64
+
     pack(ψ) = copy(DFTK.reinterpret_real(DFTK.pack_ψ(ψ)))
     unpack(x) = DFTK.unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
     unsafe_unpack(x) = DFTK.unsafe_unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
@@ -96,8 +98,13 @@ end
 struct SequentialHSolver <: AbstractHSolver end
 function solve_H(lin_solver, ψ0, H, b, itmax, atol, rtol, Pks, ::SequentialHSolver)
     Nk = size(ψ0)[1]
+    T = Base.Float64 #not realy the way to go, is it?
+
     res = []
     for ik = 1:Nk
+
+        #TODO: Pack and unpack!
+
         x0 = ψ0[ik]
         rhs = b[ik]
 
@@ -488,7 +495,7 @@ end
 
 abstract type AbstractBacktrackingRule end
 
-default_rule() = AvgNonmonotoneRule(0.95, 0.0001, 0.5)
+default_rule() = AvgNonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing)
 
 @with_kw mutable struct AvgNonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64

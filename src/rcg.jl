@@ -10,13 +10,13 @@ include("./rcg_callbacks.jl")
 function rcg(basis::PlaneWaveBasis{T}, ψ0;
                 tol=1e-6, maxiter=400,
                 callback=RcgDefaultCallback(),
-                gradient = get_default_EA_gradient(basis),
+                gradient = get_default_EA_gradient(basis, ψ0),
                 retraction = default_retraction(basis),
                 cg_param = ParamFR_PRP(),
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
                 stepsize = ExactHessianStep(2.0),
-                backtracking = StandardBacktracking(AvgNonmonotoneRule(0.95, 0.0001, 0.5), 10, false)
+                backtracking = StandardBacktracking(AvgNonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing), 10, false, nothing)
                 ) where {T}
 
     # setting parameters
@@ -32,7 +32,6 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
 
     # number of kpoints and occupation
     Nk = length(basis.kpoints)
-    σ = options.gradient_options.shift
 
     occupation = [filled_occ * ones(T, n_bands) for ik = 1:Nk]
 
@@ -51,7 +50,7 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
     res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
     # calculate gradient
-    grad = calculate_gradientcalculate_gradient(ψ, Hψ, H, Λ, res, gradient)
+    grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
 
     # give β the information from first iteration
     init_β(gamma, res, grad, cg_param)

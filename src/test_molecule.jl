@@ -25,7 +25,7 @@ scfres_start = self_consistent_field(basis; ψ = ψ0 , maxiter = 3);
 # number of iterations gets more than halved in almost all cases!ψ
 
 
-#scfres_rcg1 = rcg(basis, ψ0; tol = tol, maxiter = 100);print("");
+scfres_rcg1 = rcg(basis, ψ0; tol = tol, maxiter = 100);print("");
 
 
 
