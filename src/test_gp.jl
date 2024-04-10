@@ -18,43 +18,18 @@ n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
 
 #scfres_start = self_consistent_field(basis; ψ = ψ1 , maxiter = 1);
 #ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
+#scfres_start = direct_minimization(basis; tol = tol^(1.2), ψ = ψ1, maxiter = 20);print("");
+#ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
 
 
-options1 = default_options(basis, ψ1)
-options1.gradient_options.gradient = "H1"
-options1.retraction = "qr"
-options1.β_cg = "FR-PRP"
-options1.step_size_options.bt_iter = 10;
-options1.step_size_options.step_size = "eH"
 
-@time begin   
-    scfres_rcg1 = rcg(basis, ψ1; tol = tol, maxiter = 5000, options = options1);print("");
-end
+gradient = H1Gradient(basis)
+retraction = RetractionQR();
 
-heatmap(scfres_rcg1.ρ[:, :, 1, 1], c=:blues)
-
-options2 = default_options(basis, ψ1)
-options2.gradient_options.gradient = "ea"
-options2.gradient_options.inner_iter = 10
-options2.retraction = "qr"
-options2.β_cg = "FR-PRP"
-options2.step_size_options.bt_iter = 10;
-options2.step_size_options.step_size = "eH"
-
-@time begin   
-    scfres_rcg2 = rcg(basis, ψ1; tol = tol, maxiter = 5000, options = options2);print("");
-end
-
-options2.gradient_options.gradient = "ea2"
+scfres_rcg1 = rcg(basis, ψ1; tol = tol, maxiter = 1000, retraction = retraction);print("");
 
 
-heatmap(scfres_rcg2.ρ[:, :, 1, 1], c=:blues)
 
 
-#Tol needs to be squared (?)
-
-@time begin   
-    scfres = direct_minimization(basis, ψ1, tol = tol , maxiter = 5000);print("");
-end
-heatmap(scfres.ρ[:, :, 1, 1], c=:blues)
+scfres_scf = direct_minimization(basis; tol = tol^(1.2), ψ = ψ1, maxiter = 10);print("");
 

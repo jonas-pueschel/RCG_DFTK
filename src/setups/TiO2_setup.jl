@@ -16,7 +16,7 @@ function TiO2_setup(; Ecut = 25)
     model = model_LDA(lattice, atoms, positions)
     kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
-    #fft_size = compute_fft_size(model, 25; supersampling=ss)
-    basis = PlaneWaveBasis(model; Ecut, kgrid)#, fft_size=fft_size)
-    return [model, basis]
+    fft_size_ref = compute_fft_size(model, Ecut; supersampling=ss)
+    basis_ref = PlaneWaveBasis(model; Ecut=Ecut, kgrid, fft_size=fft_size_ref)
+    return [model, basis_ref]
 end

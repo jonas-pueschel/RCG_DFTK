@@ -1,4 +1,6 @@
 include("./lyap_solvers.jl")
+include("./shifted_preconditioner.jl")
+
 using Krylov
 using DFTK
 using Parameters
@@ -9,14 +11,17 @@ struct RiemannianGradient <: AbstractGradient
     Pks_Metric
 end
 
-function get_H1_gradient(basis::PlaneWaveBasis{T}) where {T}
+function H1Gradient(basis::PlaneWaveBasis{T}) where {T}
     Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
     return RiemannianGradient(Pks)
 end
 
 function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
-    Nk = size(ψ0)[1]
+    Nk = size(ψ)[1]
     Pks = riem_grad.Pks_Metric
+    #for ik = 1:length(Pks)
+    #    DFTK.precondprep!(Pks[ik], ψ[ik])
+    #end
     P_ψ = [ Pks[ik] \ ψ[ik] for ik = 1:Nk]
     P_Hψ = [ Pks[ik] \ Hψ[ik] for ik = 1:Nk]
     Mtx_lhs = [ψ[ik]'P_ψ[ik] for ik = 1:Nk]
@@ -33,38 +38,72 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ::L2Gradient)
     return res
 end
 
-@with_kw mutable struct EAGradient <: AbstractGradient 
-    Hinv_ψ = nothing
+abstract type AbstractHSolver end
+abstract type AbstractShiftStrategy end
+
+mutable struct EAGradient <: AbstractGradient 
     const itmax::Int64
     const atol::Float64
     const rtol::Float64
     const Pks
-    const lin_solver #solver for linear systems
-    const h_solver   #type of solver for H 
-end
+    const shift::AbstractShiftStrategy
+    const krylov_solver #solver for linear systems
+    const h_solver::AbstractHSolver   #type of solver for H 
+    Hinv_ψ
 
-function get_default_EA_gradient(basis::PlaneWaveBasis{T}, ψ0) where {T}
-    Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-    for ik = 1:length(Pks)
-        DFTK.precondprep!(Pks[ik], ψ0[ik])
+    function EAGradient(itmax::Int64, shift; rtol = 1e-16, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver())
+        Pks = [PreconditionerShiftedTPA(basis, kpt) for kpt in basis.kpoints]
+        return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
     end
-    return EAGradient(
-        nothing,
-        5,
-        1e-16,
-        1e-16,
-        Pks,
-        Krylov.minres,
-        SequentialHSolver()
-    )
 end
 
-abstract type AbstractHSolver end
 
-struct ParallelHSolver <: AbstractHSolver end
-function solve_H(lin_solver, ψ0, H, b, itmax, atol, rtol, Pks, ::ParallelHSolver)
+
+struct ConstantShift <: AbstractShiftStrategy 
+    σ
+end
+function get_constant_shift(σ::Float64, Nk)
+    return [σ for ik = 1:Nk]
+end
+function get_constant_shift(σ::AbstractArray, Nk)
+    return [σ[ik] for ik = 1:Nk]
+end
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::ConstantShift)
+    Nk = size(ψ)[1]
+    return get_constant_shift(shift.σ, Nk)
+end
+
+struct RelativeEigsShift <: AbstractShiftStrategy
+    μ::Float64
+end
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
+    Nk = size(ψ)[1] 
+    λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    #println(λ_min)
+    return [- λ_min[ik] * shift.μ for ik = 1:Nk]
+end
+
+struct PDEigsShift <: AbstractShiftStrategy
+    μ::Float64
+end
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::PDEigsShift)
+    Nk = size(ψ)[1] 
+    λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    fac = [ λ_min[ik] < 0 ? (1 + shift.μ) : 1/(1 + shift.μ) for ik = 1:Nk]
+    return [- λ_min[ik] * fac[ik] for ik = 1:Nk]
+
+end
+
+
+
+struct TotalHSolver <: AbstractHSolver end
+function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::TotalHSolver)
     Nk = size(ψ0)[1]
     T = Base.Float64
+
+    for ik = 1:length(Pks)
+        precondprep!(Pks[ik], ψ0[ik]; shift = σ[ik])
+    end
 
     pack(ψ) = copy(DFTK.reinterpret_real(DFTK.pack_ψ(ψ)))
     unpack(x) = DFTK.unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
@@ -73,64 +112,92 @@ function solve_H(lin_solver, ψ0, H, b, itmax, atol, rtol, Pks, ::ParallelHSolve
     x0 = pack(ψ0)
     rhs = pack(b)
 
-
-
     function apply_H(x)
-        #TODO shift H? 
         ξ = unsafe_unpack(x)
-        return pack(H * ξ)
+        return pack([H[ik] * ξ[ik] + σ[ik] * ξ[ik]])
     end
 
     J = LinearMap{T}(apply_H, size(x0, 1))
 
     function apply_Prec(x)
         ξ = unsafe_unpack(x)
-        Pξ = [Pks[ik] \ ξ[ik] for ik = 1:Nk]
+        Pξ = [ Pks[ik] \ ξ[ik] for ik = 1:Nk]
         return pack(Pξ)
     end
 
     M = LinearMap{T}(apply_Prec, size(x0, 1))
     
-    res = lin_solver(J, rhs, x0; M, itmax, atol, rtol)
+    res = krylov_solver(J, rhs, x0; M, itmax, atol, rtol)
     return unpack(res[1])
 end
 
-struct SequentialHSolver <: AbstractHSolver end
-function solve_H(lin_solver, ψ0, H, b, itmax, atol, rtol, Pks, ::SequentialHSolver)
+struct KpointHSolver <: AbstractHSolver end
+function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::KpointHSolver)
     Nk = size(ψ0)[1]
-    T = Base.Float64 #not realy the way to go, is it?
+    T = Base.Float64
+
+    function pack(Y::AbstractMatrix)
+        n_rows, n_cols = size(Y)
+        x = zeros(ComplexF64, n_rows * n_cols)
+        for j = 1:n_cols
+            x[(j-1) * n_rows + 1: j * n_rows] .= Y[:,j]
+        end
+        return copy(DFTK.reinterpret_real(x))
+    end
+
+    function unpack_general(x::AbstractVector, n_rows, n_cols)
+        y = DFTK.reinterpret_complex(x)
+        Y = zeros(ComplexF64, (n_rows, n_cols))
+        for j = 1:n_cols
+           Y[:,j] .=  y[(j-1) * n_rows + 1: j * n_rows]
+        end
+        return Y
+    end
+    
 
     res = []
     for ik = 1:Nk
 
-        #TODO: Pack and unpack!
+        n_rows, n_cols = size(ψ0[ik])
+        unpack(x) = unpack_general(x, n_rows, n_cols)
 
-        x0 = ψ0[ik]
-        rhs = b[ik]
+        x0 = pack(ψ0[ik])
+        rhs = pack(b[ik])
 
         function apply_H(x)
-            #TODO shift H? 
-            return pack(H[ik] * x)
+            Y = unpack(x)
+            return pack(H[ik] * Y + σ[ik] * Y)
         end
     
         J = LinearMap{T}(apply_H, size(x0, 1))
 
         function apply_Prec(x)
-            return Pks[ik] \ x
+            Y = unpack(x)
+            return pack(Pks[ik] \ Y)
         end
         M = LinearMap{T}(apply_Prec, size(x0, 1))
-        push!(res, [lin_solver(J, rhs, x0; M, itmax, atol, rtol)])
+
+        sol, stats = krylov_solver(J, rhs, x0; M, itmax, atol, rtol)
+
+        #println(stats.niter)
+
+        push!(res, unpack(sol))
     end
+
     return res 
 end
 
+
 function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     Nk = size(ψ)[1]
-    ψ0 = [ψ[ik] / Λ[ik] for ik = 1:Nk]
-    # a bit overblown, maybe pass ea_grad?
-    ea_grad.Hinv_ψ = solve_H(ea_grad.lin_solver, ψ0, H, ψ, ea_grad.itmax, ea_grad.atol, ea_grad.rtol, ea_grad.Pks, ea_grad.h_solver)
+    σ = calculate_shift(ψ, Hψ, H, Λ, res, ea_grad.shift)
+
+    #calculate good initial guess
+    ψ0 = [ψ[ik] / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
+
+    ea_grad.Hinv_ψ = solve_H(ea_grad.krylov_solver, ψ0, H, ψ, σ, ea_grad.itmax, ea_grad.atol, ea_grad.rtol, ea_grad.Pks, ea_grad.h_solver)
     Ga = [ψ[ik]'ea_grad.Hinv_ψ[ik] for ik = 1:Nk]
-    return [ ψ[ik] - Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
+    return [ ψ[ik] - ea_grad.Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
 end
 
 
@@ -148,40 +215,39 @@ end
 
 abstract type AbstractRetraction end
 
-function default_retraction(basis::PlaneWaveBasis{T}) where {T}
-    Nk = length(basis.kpoints)
-    if (Nk == 1)
-        return RetractionQR()
-    else
-        return RetractionPolar()
-    end
-end
-@with_kw mutable struct RetractionQR <: AbstractRetraction
+@kwdef mutable struct RetractionQR <: AbstractRetraction
     R = nothing
 end
 
+function ortho_qr(φk::ArrayType) where {ArrayType <: AbstractArray}
+    Nn, Nk = size(φk)
+    temp = qr(φk)
+    Q = convert(ArrayType, temp.Q)[1:Nn, 1:Nk]
+    R = convert(ArrayType, temp.R)[1:Nk, 1:Nk]
+    return (Q,R)
+end
+
+#DFTK.@timing 
 function calculate_retraction(ψ, η, τ, ret_qr::RetractionQR)
     Nk = size(ψ)[1]
     Q = []
     R = []
     for ik = 1:Nk
         φk = ψ[ik] + τ[ik] * η[ik]
-        Nn, Nm = size(φk)
-        temp = qr(φk)
-        Rk = convert(ArrayType, temp.R)
-        Qk = convert(ArrayType, temp.Q)
-        push!(Q, [Qk[1:Nn, 1:Nm]])
-        push!(R, [Rk[1:Nm, 1:Nm]])
+        Qk, Rk = ortho_qr(φk)
+        push!(Q, Qk)
+        push!(R, Rk)
     end
     #save this value for further calculations
     ret_qr.R = R
     return Q
 end
 
-@with_kw mutable struct RetractionPolar <: AbstractRetraction
+@kwdef mutable struct RetractionPolar <: AbstractRetraction
     P = nothing
     Pinv = nothing
 end
+#DFTK.@timing 
 function calculate_retraction(ψ, η, τ, ret_pol::RetractionPolar)
     Nk = size(ψ)[1]
     Q = []
@@ -195,9 +261,9 @@ function calculate_retraction(ψ, η, τ, ret_pol::RetractionPolar)
         σ_inv = broadcast(x -> 1.0/x, σ)
         Pinvk = U * Diagonal(σ_inv) * U'
         Qk = φk * Pinvk
-        push!(Q, [Qk])
-        push!(P, [U * Diagonal(σ) * U'])
-        push!(Pinv, [Pinvk])
+        push!(Q, Qk)
+        push!(P, U * Diagonal(σ) * U')
+        push!(Pinv, Pinvk)
     end
     #save values for further calculations
     ret_pol.P = P
@@ -210,11 +276,12 @@ abstract type AbstractTransport end
 default_transport() = DifferentiatedRetractionTransport()
 
 struct DifferentiatedRetractionTransport <: AbstractTransport end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_qr::RetractionQR, ::AbstractGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
-    Yrf = [ξ[ik] / R[ik] for ik = 1:Nk]
+    Yrf = [ξ[ik] / ret_qr.R[ik] for ik = 1:Nk]
     Ge = [ψ[ik]'Yrf[ik] for ik = 1:Nk]
     skew = [LowerTriangular(deepcopy(Ge[ik])) for ik = 1:Nk]
     skew = [skew[ik] - skew[ik]' for ik = 1:Nk]
@@ -225,6 +292,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTrans
     end
     return [ ψ[ik] * (skew[ik] - Ge[ik])  + Yrf[ik] for ik = 1:Nk]
 end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_pol::RetractionPolar, ::AbstractGradient ; 
                             is_prev_dir = true)
@@ -243,6 +311,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTrans
 end
 
 struct L2ProjectionTransport <: AbstractTransport end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
                             ::AbstractRetraction, ::AbstractGradient ; 
                             is_prev_dir = true)
@@ -255,6 +324,7 @@ end
 struct RiemannianProjectionTransport <: AbstractTransport 
     Pks_Metric
 end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
                             ::AbstractRetraction, ::AbstractGradient ; 
                             is_prev_dir = true)
@@ -269,6 +339,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjection
 end
 
 struct EAProjectionTransport <: AbstractTransport end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::EAProjectionTransport,  
                             ::AbstractRetraction, ea_grad::EAGradient ; 
                             is_prev_dir = true)
@@ -281,6 +352,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::EAProjectionTransport,
 end
 
 struct InverseRetractionTransport <: AbstractTransport end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionQR, ::AbstractGradient ; 
                             is_prev_dir = true)
@@ -291,6 +363,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,
     R_ir = [tsylv2solve(Mtx_lhs[ik]) for ik = 1:Nk]
     return [- ψ_old[ik] * R_ir[ik] + ψ[ik] for ik = 1:Nk]
 end
+#DFTK.@timing 
 function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionPolar, ::AbstractGradient ; 
                             is_prev_dir = true)
@@ -305,25 +378,48 @@ end
 
 abstract type AbstractCGParam end
 
+mutable struct ParamRestart <: AbstractCGParam 
+    param::AbstractCGParam
+    restart::Int64
+    iter::Int64
+    function ParamRestart(param::AbstractCGParam, restart::Int64)
+        return new(param, restart, 0)
+    end
+end
+function init_β(gamma, res, grad, param::ParamRestart)
+    init_β(gamma, res, grad, param.param)
+end
+function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamRestart)
+    if ((param.iter += 1)%param.restart == 0)
+        println("restart!")
+        #restart every param.restart-th step
+        init_β(gamma, res, grad, param.param)
+        Nk = size(gamma)[1]
+        return [0.0 for ik = 1:Nk]   
+    else
+        return calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param.param)
+    end
+end
+
 struct ParamZero <: AbstractCGParam end
 function init_β(gamma, res, grad, ::ParamZero)
     #empty
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , ::ParamZero)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     return [0.0 for ik = 1:Nk]   
 end
 
 
 
-@with_kw mutable struct ParamHS <: AbstractCGParam 
+@kwdef mutable struct ParamHS <: AbstractCGParam 
     grad_old = nothing
 end
 function init_β(gamma, res, grad, param::ParamHS)
     param.grad_old = grad
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamHS)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     T_grad_old = transport(param.grad_old)
     β = [real((gamma[ik] - tr(T_grad_old[ik]'res[ik]))/(tr(T_η_old[ik]'res[ik]) - desc_old[ik])) for ik = 1:Nk]
 
@@ -337,18 +433,18 @@ function init_β(gamma, res, grad, ::ParamDY)
     #empty
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , ::ParamDY)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     return [real(gamma[ik]/(tr(T_η_old[ik]'res[ik]) - desc_old[ik])) for ik = 1:Nk]
 end
 
-@with_kw mutable struct ParamPRP <: AbstractCGParam
+@kwdef mutable struct ParamPRP <: AbstractCGParam
     gamma_old = nothing
 end
 function init_β(gamma, res, grad, param::ParamPRP)
     param.gamma_old = gamma
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamPRP)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     β = [real((gamma[ik] - tr(T_η_old[ik]'res[ik]))/param.gamma_old[ik]) for ik = 1:Nk]
     
     param.gamma_old = gamma
@@ -356,14 +452,14 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::P
     return  β
 end
 
-@with_kw mutable struct ParamFR <: AbstractCGParam 
+@kwdef mutable struct ParamFR <: AbstractCGParam 
     gamma_old = nothing
 end
 function init_β(gamma, res, grad, param::ParamFR)
     param.gamma_old = gamma
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamFR)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     β = [real(gamma[ik]/param.gamma_old[ik]) for ik = 1:Nk]   
     
     param.gamma_old = gamma
@@ -372,11 +468,14 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::P
 end
 
 
-@with_kw mutable struct ParamFR_PRP <: AbstractCGParam
+@kwdef mutable struct ParamFR_PRP <: AbstractCGParam
     gamma_old = nothing
 end
-function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamPRP)
-    Nk = size(gamma[1])
+function init_β(gamma, res, grad, param::ParamFR_PRP)
+    param.gamma_old = gamma
+end
+function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamFR_PRP)
+    Nk = size(gamma)[1]
     β = [max(min(gamma[ik], (gamma[ik] - real(tr(T_η_old[ik]'res[ik]))))/param.gamma_old[ik], 0) for ik = 1:Nk]
 
     param.gamma_old = gamma
@@ -384,14 +483,14 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::P
     return  β
 end
 
-@with_kw mutable struct ParamHS_DY <: AbstractCGParam 
+@kwdef mutable struct ParamHS_DY <: AbstractCGParam 
     grad_old = nothing
 end
 function init_β(gamma, res, grad, param::ParamHS_DY)
     param.grad_old = grad
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamHS_DY)
-    Nk = size(gamma[1])
+    Nk = size(gamma)
     T_grad_old = transport(param.grad_old)
     temp = [real(tr(T_η_old[ik]'res[ik]) - desc_old[ik]) for ik = 1:Nk ]
     β = [max(min(real((gamma[ik] - tr(T_grad_old[ik]'res[ik]))/temp[ik] - desc_old[ik]), real(gamma[ik]/temp[ik])), 0) for ik = 1: Nk]
@@ -401,17 +500,24 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::P
     return β
 end
 
-@with_kw mutable struct ParamHZ <: AbstractCGParam 
+
+#@kwdef and mutable structs do not work as expected
+mutable struct ParamHZ <: AbstractCGParam 
     const μ
-    gamma_old = nothing
-    grad_old = nothing
+    gamma_old
+    grad_old
+    function ParamHZ(μ)
+        return new(μ, nothing, nothing)
+    end
 end
+    
+
 function init_β(gamma, res, grad, param::ParamHZ)
     param.grad_old = grad
     param.gamma_old = gamma
 end
 function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamHZ)
-    Nk = size(gamma[1])
+    Nk = size(gamma)[1]
     T_grad_old = transport(param.grad_old)
     temp1 = [real(tr(T_η_old[ik]'res[ik]) - desc_old[ik]) for ik = 1:Nk]
     temp2 = [real(gamma[ik] - 2 * tr(T_grad_old[ik]'res[ik]) + param.gamma_old[ik]/temp1[ik]) for ik = 1:Nk]
@@ -431,8 +537,9 @@ abstract type AbstractStepSize end
 struct ExactHessianStep <: AbstractStepSize 
     τ_max::Float64
 end
-function calculate_τ(ψ, η, grad, res, T_η_old, τ_old, desc, Λ, H, ρ, occupation, basis, stepsize::ExactHessianStep)
-    Nk = size(ψ[1])
+#DFTK.@timing 
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ExactHessianStep)
+    Nk = size(ψ)[1]
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)] 
     η_Ω_η = [tr(η[ik]'Ω_η[ik]) for ik in 1:Nk]
     K_η = DFTK.apply_K(basis, η, ψ, ρ, occupation)
@@ -445,8 +552,9 @@ end
 struct ApproxHessianStep <: AbstractStepSize
     τ_max::Float64
 end
-function calculate_τ(ψ, η, grad, res, T_η_old, τ_old, desc, Λ, H, ρ, occupation, basis, ::ApproxHessianStep)
-    Nk = size(ψ[1])
+#DFTK.@timing 
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ApproxHessianStep)
+    Nk = size(ψ)[1]
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)] 
     η_Ω_η = [tr(η[ik]'Ω_η[ik]) for ik in 1:Nk]
     return [min(real(abs(desc[ik]/(η_Ω_η[ik]))), stepsize.τ_max) for ik in 1:Nk]
@@ -454,22 +562,32 @@ end
 struct ConstantStep <: AbstractStepSize
     τ_const
 end
-function calculate_τ(ψ, η, grad, res, T_η_old, τ_old, desc, Λ, H, ρ, occupation, basis, ::ConstantStep)
-    return options.τ_const
+function get_constant_step(τ_const::Float64, Nk)
+    return [τ_const for ik = 1:Nk]
+end
+#DFTK.@timing 
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ConstantStep)
+    Nk = size(ψ)[1]
+    return get_constant_step(stepsize.τ_const, Nk)
 end
 
 
 #Note: This may only show intended behaviour for β ≡ 0, i.e. η = -grad
-@with_kw mutable struct BarzilaiBorweinStep <: AbstractStepSize
+mutable struct BarzilaiBorweinStep <: AbstractStepSize
     const τ_min::Float64
     const τ_max::Float64
     const τ_0
-    desc_old = nothing
-    is_odd = false
+    τ_old
+    desc_old
+    is_odd
+    function BarzilaiBorweinStep(τ_min, τ_max, τ_0)
+        return new(τ_min, τ_max, τ_0, nothing, nothing, false)
+    end
 end
-function calculate_τ(ψ, η, grad, res, T_η_old, τ_old, desc, Λ, H, ρ, occupation, basis, stepsize::BarzilaiBorweinStep)
-    Nk = size(ψ[1])
-    if (η_old === nothing)
+#DFTK.@timing 
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::BarzilaiBorweinStep)
+    Nk = size(ψ)[1]
+    if (stepsize.τ_old === nothing)
         #first step
         τ = τ_0
     else
@@ -489,7 +607,8 @@ function calculate_τ(ψ, η, grad, res, T_η_old, τ_old, desc, Λ, H, ρ, occu
     #update params
     stepsize.desc_old = desc
     stepsize.is_odd = !stepsize.is_odd
-
+    stepsize.τ_old = τ
+    
     return τ
 end
 
@@ -497,23 +616,30 @@ abstract type AbstractBacktrackingRule end
 
 default_rule() = AvgNonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing)
 
-@with_kw mutable struct AvgNonmonotoneRule <: AbstractBacktrackingRule
+@kwdef mutable struct AvgNonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64
     const β::Float64
     const δ::Float64
-    q = 1 
-    c = nothing
+    q 
+    c 
+    function AvgNonmonotoneRule(α::Float64, β::Float64, δ::Float64)
+        return new(α, β, δ, 1, nothing)
+    end
 end
 
 function check_rule(E_current, E_next, τ, desc, rule::AvgNonmonotoneRule)
-    return E_next <= rule.c + rule.β * sum(τ .* desc) 
+    if (isnothing(rule.c))
+        #initialize c on first step
+        rule.c = E_current;
+    end
+    return E_next <= rule.c + rule.β * real(sum(τ .* desc)) 
 end
 function backtrack!(τ, rule::AvgNonmonotoneRule)
     τ .= rule.δ * τ
 end
 function update_rule!(E, rule::AvgNonmonotoneRule)
     rule.q = rule.α * rule.q + 1
-    rule.c = (1-1/rule.q)*rule.c + 1/rule.q * E;
+    rule.c = (1-1/rule.q) * rule.c + 1/rule.q * E;
 end
 
 struct AvgArmijoRule <: AbstractBacktrackingRule
@@ -521,7 +647,7 @@ struct AvgArmijoRule <: AbstractBacktrackingRule
     δ::Float64
 end
 function check_rule(E_current, E_next, τ, desc, rule::AvgArmijoRule)
-    return E_next <= E_current + rule.β * sum(τ .* desc) 
+    return E_next <= E_current + rule.β * real(sum(τ .* desc)) 
 end
 function backtrack!(τ, rule::AvgArmijoRule)
     τ .= rule.δ * τ
@@ -532,41 +658,41 @@ function update_rule!(E, ::AvgArmijoRule) end
 
 abstract type AbstractBacktracking end
 
-@with_kw mutable struct StandardBacktracking <: AbstractBacktracking 
-    const rule::AbstractBacktrackingRule
-    const max_iter::Int64
-    const greedy::Bool
-    τ_old = nothing
+
+#DFTK.@timing 
+function do_step(basis, occupation, ψ, η, τ, retraction)
+    ψ_next = calculate_retraction(ψ, η, τ, retraction)
+
+    ρ_next = DFTK.compute_density(basis, ψ_next, occupation)
+    energies_next, H_next = DFTK.energy_hamiltonian(basis, ψ_next, occupation; ρ=ρ_next)
+
+    (ψ_next, ρ_next, energies_next, H_next)
 end
 
+mutable struct StandardBacktracking <: AbstractBacktracking 
+    const rule::AbstractBacktrackingRule
+    const maxiter::Int64
+    function  StandardBacktracking(rule::AbstractBacktrackingRule, maxiter::Int64)
+        return new(rule, maxiter)
+    end
+end
 
 function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
     retraction::AbstractRetraction, stepsize::AbstractStepSize, backtracking::StandardBacktracking)
 
+    τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize)
+    
+    ψ_next = nothing
+    energies_next = nothing
+    H_next = nothing
+    ρ_next = nothing
 
-    if (backtracking.greedy && backtracking.τ_old !== nothing)
-        #try to reuse old step size
-        τ = backtracking.τ_old
-        ψ_next = calculate_retraction(ψ, η, τ, retraction)
-        ρ_next = DFTK.compute_density(basis, ψ_next, occupation)
-        energies_next, H_next = DFTK.energy_hamiltonian(basis, ψ_next, occupation; ρ=ρ_next)
-        
-        if check_rule(energies.total, energies_next.total, τ, desc, backtracking.rule)
-            update_rule!(energies_next, backtracking.rule)
-            return (;ψ_next, ρ_next, energies_next, H_next)
-        end 
-    end
-
-    τ = calculate_τ(ψ, η, grad, res, T_η_old, backtracking.τ_old, desc, Λ, H, ρ, occupation, basis, stepsize)
-
-    for k in 0:backtracking.max_iter
+    for k = 0:backtracking.maxiter
         if (k != 0)
-            backtrack!(τ, rule)
+            backtrack!(τ, backtracking.rule)
         end
         
-        ψ_next = calculate_retraction(ψ, η, τ, ret)
-        ρ_next = DFTK.compute_density(basis, ψ_next, occupation)
-        energies_next, H_next = DFTK.energy_hamiltonian(basis, ψ_next, occupation; ρ=ρ_next)
+        ψ_next, ρ_next, energies_next, H_next = do_step(basis, occupation, ψ, η, τ, retraction)
         
 
         if check_rule(energies.total, energies_next.total, τ, desc, backtracking.rule)
@@ -574,9 +700,62 @@ function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occu
         end 
     end
 
-    backtracking.τ_old = τ
-    update_rule!(energies_next, backtracking.rule)
-    return (;ψ_next, ρ_next, energies_next, H_next)
+    update_rule!(energies_next.total, backtracking.rule)
+    return (;ψ_next, ρ_next, energies_next, H_next, τ)
 end
 
+
+mutable struct GreedyBacktracking <: AbstractBacktracking 
+    const rule::AbstractBacktrackingRule
+    const maxiter::Int64
+    const recalculate::Int64
+    τ_old
+    iter::Int64
+    function  GreedyBacktracking(rule::AbstractBacktrackingRule, maxiter::Int64, recalculate::Int64)
+        return new(rule, maxiter, recalculate, nothing, -1)
+    end
+end
+
+
+function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
+    retraction::AbstractRetraction, stepsize::AbstractStepSize, backtracking::GreedyBacktracking)
+
+    if ((backtracking.iter += 1)%backtracking.recalculate != 0 && !isnothing(backtracking.τ_old))
+        #try to reuse old step size
+        τ = backtracking.τ_old
+
+        ψ_next, ρ_next, energies_next, H_next = do_step(basis, occupation, ψ, η, backtracking.τ_old, retraction)
+        
+        if check_rule(energies.total, energies_next.total, τ, desc, backtracking.rule)
+            update_rule!(energies_next.total, backtracking.rule)
+            return (;ψ_next, ρ_next, energies_next, H_next, τ)
+        end 
+    end
+
+    τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize)
+    
+    #reset the count if old stepsize couldnt be used
+    backtracking.iter = 0;
+
+    ψ_next = nothing
+    energies_next = nothing
+    H_next = nothing
+    ρ_next = nothing
+
+    for k = 0:backtracking.maxiter
+        if (k != 0)
+            backtrack!(τ, backtracking.rule)
+        end
+        
+        ψ_next, ρ_next, energies_next, H_next = do_step(basis, occupation, ψ, η, τ, retraction)
+        
+        if check_rule(energies.total, energies_next.total, τ, desc, backtracking.rule)
+            break
+        end 
+    end
+
+    backtracking.τ_old = τ
+    update_rule!(energies_next.total, backtracking.rule)
+    return (;ψ_next, ρ_next, energies_next, H_next, τ)
+end
 

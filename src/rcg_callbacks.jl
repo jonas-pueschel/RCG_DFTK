@@ -1,5 +1,6 @@
 using Printf
 using TimerOutputs
+using DFTK
 
 """
 Default callback function for `Riemannian conjugate gradient`, which prints a convergence table.
@@ -9,11 +10,12 @@ Default callback function for `Riemannian conjugate gradient`, which prints a co
 function RcgDefaultCallback(; show_time=true)
     prev_time   = nothing
     prev_energy = NaN
-    function callback(info, norm2res)
-
+    function callback(info)
         #!mpi_master() && return info  # Rest is printing => only do on master
         if info.stage == :finalize
-            info.converged || @warn "$(info.algorithm) not converged."
+            if (haskey(info, :converged))
+                info.converged || @warn "$(info.algorithm) not converged."
+            end
             return info
         end
 
@@ -24,7 +26,7 @@ function RcgDefaultCallback(; show_time=true)
 
         end
         E    = isnothing(info.energies) ? Inf : info.energies.total
-        Δρ   = norm(info.ρout - info.ρin) * sqrt(info.basis.dvol)
+        Δρ   = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(info.basis.dvol)
 
         tstr = " "^9
         if show_time && !isnothing(prev_time)
@@ -42,10 +44,13 @@ function RcgDefaultCallback(; show_time=true)
         end
 
 
-        Δρstr   = " " * format_log8(Δρ)
+        Δρstr   = isnothing(Δρ) ? " "^9 : " " * format_log8(Δρ)
 
-        resstr = !isnothing(norm2res) ? " " * (@sprintf "%8.2f" log10(abs(norm2res))) : " "^9
-
+        if (haskey(info, :norm_res) )
+            resstr = !isnothing(info.norm_res) ? " " * (@sprintf "%8.2f" log10(abs(info.norm_res))) : " "^9
+        else
+            resstr = " "^9
+        end
         @printf "% 3d   %s   %s   %s   %s   %s" info.n_iter Estr resstr ΔE Δρstr tstr
         println()
         prev_energy = info.energies.total
@@ -54,4 +59,8 @@ function RcgDefaultCallback(; show_time=true)
         flush(stdout)
         info
     end
+end
+
+function RcgConvergenceResidual(tolerance)
+    info -> (info.norm_res < tolerance)
 end

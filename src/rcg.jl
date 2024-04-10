@@ -7,16 +7,17 @@ include("./rcg_callbacks.jl")
 # RCG algorithm to solve SCF equations
 
 
-function rcg(basis::PlaneWaveBasis{T}, ψ0;
+DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ0;
                 tol=1e-6, maxiter=400,
-                callback=RcgDefaultCallback(),
-                gradient = get_default_EA_gradient(basis, ψ0),
-                retraction = default_retraction(basis),
+                callback = RcgDefaultCallback(),
+                is_converged = RcgConvergenceResidual(tol),
+                gradient = default_EA_gradient(basis),
+                retraction = RetractionPolar(),
                 cg_param = ParamFR_PRP(),
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
                 stepsize = ExactHessianStep(2.0),
-                backtracking = StandardBacktracking(AvgNonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing), 10, false, nothing)
+                backtracking = StandardBacktracking(AvgNonmonotoneRule(0.95, 0.0001, 0.5), 10)
                 ) where {T}
 
     # setting parameters
@@ -49,19 +50,23 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
     Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik = 1:Nk]
     res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
+    #innitial callback
+    info = (; ham=H, ψ,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=nothing, ρout=ρ, n_iter,
+    energies, algorithm="RCG")
+    #callback(info)
+
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
-
-    # give β the information from first iteration
-    init_β(gamma, res, grad, cg_param)
     
     gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
     desc = - gamma
     η = - grad
     T_η_old = nothing
 
+    # give β the information from first iteration
+    init_β(gamma, res, grad, cg_param)
+
     # perform iterations
-    converged = false
     while n_iter < maxiter
         n_iter += 1
 
@@ -69,35 +74,39 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
         next = perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
                 retraction, stepsize, backtracking)
 
-        # callback and test convergence
-        info = (; ham=H, basis, converged, stage=:iterate, ρin=ρ, ρout=next.ρ_next, n_iter,
-                energies, algorithm="RCG")
-
-
         #update orbitals, density, H and energies
         ψ_old = ψ
         ψ = next.ψ_next
+        ρ_prev = ρ
         ρ = next.ρ_next
         H = next.H_next
+        τ = next.τ
         energies = next.energies_next
 
+        #println([norm(τ[ik] * η[ik]) for ik = 1:Nk])
 
 
-        #compute residual
-        Hψ = [H.blocks[ik] * ψk + σ * ψk for (ik, ψk) in enumerate(ψ)]
+
+        #compute residual #TODO shift?
+        Hψ = [H.blocks[ik] * ψk for (ik, ψk) in enumerate(ψ)]
         Λ = [ψ[ik]'Hψ[ik] for ik = 1:Nk]
         Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik = 1:Nk]
         res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
-        # check convergence
-        norm2res = sum([real(tr(res[ik]'res[ik])) for ik = 1:Nk])
-        callback(info, sqrt(norm2res))
-        if(norm2res < tol * tol)
+        # callback and test convergence
+        if info.converged
             break
         end
 
+        info = (; ham=H, ψ,basis, converged = is_converged(info), stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+        energies, algorithm="RCG")
+
+        callback(info)
+        # one additional step
+ 
+
         #calculate_gradient
-        grad = calculate_gradientcalculate_gradient(ψ, Hψ, H, Λ, res, gradient)
+        grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
         gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
 
         # calculate transport of η
@@ -137,9 +146,12 @@ function rcg(basis::PlaneWaveBasis{T}, ψ0;
     # return results and call callback one last time with final state for clean
     # up
 
-    #TODO fix converged
-    info = (; ham=H, basis, energies, converged = true , ρ, eigenvalues, occupation, εF, n_iter, ψ,
+    # λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    # println(λ_min)
+
+    info = (; ham=H, ψ, basis, energies, converged = is_converged(info) , norm_res = norm(res), ρ, eigenvalues, occupation, εF, n_iter,
             stage=:finalize, algorithm="RCG")
-    callback(info, sqrt(norm2res))
+    callback(info)
+
     info
 end
