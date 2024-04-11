@@ -2,7 +2,7 @@
 
 julia_version = "1.10.2"
 manifest_format = "2.0"
-project_hash = "f93c2b0792153b5822dacf2154a9f68a6305cee6"
+project_hash = "1b7aee6655a15ada12e7a74b05479df93e2d8d5e"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -690,6 +690,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "3336abae9a713d2210bb57ab484b1e065edd7d23"
 uuid = "aacddb02-875f-59d6-b918-886e6ef4fbf8"
 version = "3.0.2+0"
+
+[[deps.Krylov]]
+deps = ["LinearAlgebra", "Printf", "SparseArrays"]
+git-tree-sha1 = "8a6837ec02fe5fb3def1abc907bb802ef11a0729"
+uuid = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+version = "0.9.5"
 
 [[deps.LAME_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]

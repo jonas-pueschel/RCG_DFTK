@@ -3,7 +3,6 @@ include("./shifted_preconditioner.jl")
 
 using Krylov
 using DFTK
-using Parameters
 
 abstract type AbstractGradient end 
 
