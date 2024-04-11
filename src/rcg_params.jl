@@ -614,45 +614,46 @@ end
 
 abstract type AbstractBacktrackingRule end
 
-default_rule() = AvgNonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing)
+default_rule() = NonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing)
 
-@kwdef mutable struct AvgNonmonotoneRule <: AbstractBacktrackingRule
+@kwdef mutable struct NonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64
     const β::Float64
     const δ::Float64
     q 
     c 
-    function AvgNonmonotoneRule(α::Float64, β::Float64, δ::Float64)
+    function NonmonotoneRule(α::Float64, β::Float64, δ::Float64)
         return new(α, β, δ, 1, nothing)
     end
 end
 
-function check_rule(E_current, E_next, τ, desc, rule::AvgNonmonotoneRule)
+function check_rule(E_current, E_next, τ, desc, rule::NonmonotoneRule)
     if (isnothing(rule.c))
         #initialize c on first step
         rule.c = E_current;
     end
     return E_next <= rule.c + rule.β * real(sum(τ .* desc)) 
 end
-function backtrack!(τ, rule::AvgNonmonotoneRule)
+function backtrack!(τ, rule::NonmonotoneRule)
     τ .= rule.δ * τ
 end
-function update_rule!(E, rule::AvgNonmonotoneRule)
+function update_rule!(E, rule::NonmonotoneRule)
     rule.q = rule.α * rule.q + 1
     rule.c = (1-1/rule.q) * rule.c + 1/rule.q * E;
 end
 
-struct AvgArmijoRule <: AbstractBacktrackingRule
+struct ArmijoRule <: AbstractBacktrackingRule
     β::Float64
     δ::Float64
 end
-function check_rule(E_current, E_next, τ, desc, rule::AvgArmijoRule)
-    return E_next <= E_current + rule.β * real(sum(τ .* desc)) 
+function check_rule(E_current, E_next, τ, desc, rule::ArmijoRule)
+    #small correction if change in energy is small TODO: better workaround.
+    return E_next <= E_current + (rule.β * (real(sum(τ .* desc))) + 32 * eps(Float64) * abs(E_current))
 end
-function backtrack!(τ, rule::AvgArmijoRule)
+function backtrack!(τ, rule::ArmijoRule)
     τ .= rule.δ * τ
 end
-function update_rule!(E, ::AvgArmijoRule) end
+function update_rule!(E, ::ArmijoRule) end
 
 
 
