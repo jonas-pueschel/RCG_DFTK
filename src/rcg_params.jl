@@ -93,7 +93,13 @@ function calculate_shift(ψ, Hψ, H, Λ, res, shift::PDEigsShift)
 
 end
 
+struct RelativeΛShift <: AbstractShiftStrategy 
+    μ::Float64
+end
 
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeΛShift)
+    return - shift.μ * Λ
+end
 
 struct TotalHSolver <: AbstractHSolver end
 function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::TotalHSolver)
@@ -113,7 +119,7 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::TotalHS
 
     function apply_H(x)
         ξ = unsafe_unpack(x)
-        return pack([H[ik] * ξ[ik] + σ[ik] * ξ[ik]])
+        return pack([H[ik] * ξ[ik] + ξ[ik] * σ[ik]])
     end
 
     J = LinearMap{T}(apply_H, size(x0, 1))
@@ -165,7 +171,7 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::KpointH
 
         function apply_H(x)
             Y = unpack(x)
-            return pack(H[ik] * Y + σ[ik] * Y)
+            return pack(H[ik] * Y +  Y * σ[ik])
         end
     
         J = LinearMap{T}(apply_H, size(x0, 1))
@@ -276,7 +282,7 @@ default_transport() = DifferentiatedRetractionTransport()
 
 struct DifferentiatedRetractionTransport <: AbstractTransport end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_qr::RetractionQR, ::AbstractGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -292,7 +298,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTrans
     return [ ψ[ik] * (skew[ik] - Ge[ik])  + Yrf[ik] for ik = 1:Nk]
 end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_pol::RetractionPolar, ::AbstractGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -311,7 +317,7 @@ end
 
 struct L2ProjectionTransport <: AbstractTransport end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
                             ::AbstractRetraction, ::AbstractGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -324,7 +330,7 @@ struct RiemannianProjectionTransport <: AbstractTransport
     Pks_Metric
 end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
                             ::AbstractRetraction, ::AbstractGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -339,7 +345,7 @@ end
 
 struct EAProjectionTransport <: AbstractTransport end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::EAProjectionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::EAProjectionTransport,  
                             ::AbstractRetraction, ea_grad::EAGradient ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -352,7 +358,7 @@ end
 
 struct InverseRetractionTransport <: AbstractTransport end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionQR, ::AbstractGradient ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
@@ -363,7 +369,7 @@ function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,
     return [- ψ_old[ik] * R_ir[ik] + ψ[ik] for ik = 1:Nk]
 end
 #DFTK.@timing 
-function calculate_tranpsort(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionPolar, ::AbstractGradient ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
