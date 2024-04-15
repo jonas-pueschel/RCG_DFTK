@@ -51,7 +51,7 @@ mutable struct EAGradient <: AbstractGradient
     Hinv_ψ
 
     function EAGradient(itmax::Int64, shift; rtol = 1e-16, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver())
-        Pks = [PreconditionerShiftedTPA(basis, kpt) for kpt in basis.kpoints]
+        Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
     end
 end
@@ -106,9 +106,9 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::TotalHS
     Nk = size(ψ0)[1]
     T = Base.Float64
 
-    for ik = 1:length(Pks)
-        precondprep!(Pks[ik], ψ0[ik]; shift = σ[ik])
-    end
+    #for ik = 1:length(Pks)
+    #    precondprep!(Pks[ik], ψ0[ik], shift = σ[ik])
+    #end
 
     pack(ψ) = copy(DFTK.reinterpret_real(DFTK.pack_ψ(ψ)))
     unpack(x) = DFTK.unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
@@ -160,9 +160,9 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::KpointH
     end
     
     #shift preconditioner
-    for ik = 1:length(Pks)
-        precondprep!(Pks[ik], ψ0[ik]; shift = σ[ik])
-    end
+    #for ik = 1:length(Pks)
+    #    precondprep!(Pks[ik], ψ0[ik], shift = σ[ik])
+    #end
 
     res = []
     for ik = 1:Nk
