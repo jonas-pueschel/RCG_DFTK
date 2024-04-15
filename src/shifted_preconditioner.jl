@@ -62,3 +62,10 @@ function precondprep!(P::PreconditionerShiftedTPA{T}, X; shift::Matrix{T} = noth
         P.shift = eigmax(shift);
     end
 end
+
+function precondprep!(P::PreconditionerShiftedTPA{T}, X; shift::Matrix{ComplexF64} = nothing) where {T}
+    #P.mean_kin = [real(dot(x, Diagonal(P.kin), x)) for x in eachcol(X)]
+    if (!isnothing(shift))
+        P.shift = eigmax(shift);
+    end
+end
