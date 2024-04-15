@@ -8,7 +8,7 @@ mutable struct PreconditionerShiftedTPA{T <: Real}
     kpt::Kpoint
     kin::AbstractVector{T}  # kinetic energy of every G
     mean_kin::Union{Nothing, Vector{T}}  # mean kinetic energy of every band
-    shift::T  # if mean_kin is not set by `precondprep!`, this will be used for the shift
+    shift  # shift
 end
 
 function PreconditionerShiftedTPA(basis::PlaneWaveBasis{T}, kpt::Kpoint) where {T}
@@ -51,7 +51,14 @@ ldiv!(P::PreconditionerShiftedTPA, R) = ldiv!(R, P, R)
 end
 (Base.:*)(P::PreconditionerShiftedTPA, R) = mul!(copy(R), P, R)
 
-function precondprep!(P::PreconditionerShiftedTPA, X; shift = 1)
+function precondprep!(P::PreconditionerShiftedTPA{T}, X; shift::T = 1.0) where {T}
     #P.mean_kin = [real(dot(x, Diagonal(P.kin), x)) for x in eachcol(X)]
     P.shift = shift
+end
+
+function precondprep!(P::PreconditionerShiftedTPA{T}, X; shift::Matrix{T} = nothing) where {T}
+    #P.mean_kin = [real(dot(x, Diagonal(P.kin), x)) for x in eachcol(X)]
+    if (!isnothing(shift))
+        P.shift = eigmax(shift);
+    end
 end

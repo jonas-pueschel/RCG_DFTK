@@ -110,10 +110,10 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ
         gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
 
         # calculate transport of η
-        T_η_old = calculate_tranpsort(ψ, η, τ, ψ_old, transport_η, retraction, gradient; is_prev_dir = true)
+        T_η_old = calculate_transport(ψ, η, τ, ψ_old, transport_η, retraction, gradient; is_prev_dir = true)
 
         # give transport rule for grad (only used if necessary for β)
-        transport(ξ) = calculate_tranpsort(ψ, ξ, τ, ψ_old, transport_grad, retraction, gradient; is_prev_dir = false)
+        transport(ξ) = calculate_transport(ψ, ξ, τ, ψ_old, transport_grad, retraction, gradient; is_prev_dir = false)
 
         # calculate the cg param, note that desc is the descent from the *last* iteration
         β = calculate_β(gamma, desc, res, grad, T_η_old, transport , cg_param)

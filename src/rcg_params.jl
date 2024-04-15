@@ -159,6 +159,10 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, atol, rtol, Pks, ::KpointH
         return Y
     end
     
+    #shift preconditioner
+    for ik = 1:length(Pks)
+        precondprep!(Pks[ik], ψ0[ik]; shift = σ[ik])
+    end
 
     res = []
     for ik = 1:Nk
@@ -204,6 +208,47 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     Ga = [ψ[ik]'ea_grad.Hinv_ψ[ik] for ik = 1:Nk]
     return [ ψ[ik] - ea_grad.Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
 end
+
+mutable struct EAPrecGradient <: AbstractGradient 
+    const itmax::Int64
+    const atol::Float64
+    const rtol::Float64
+    const Pks
+    const shift::AbstractShiftStrategy
+    const krylov_solver #solver for linear systems
+    const h_solver::AbstractHSolver   #type of solver for H 
+    #TODO Initial value calculation?
+    function EAPrecGradient(itmax::Int64, shift; rtol = 1e-16, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver())
+        Pks = [PreconditionerShiftedTPA(basis, kpt) for kpt in basis.kpoints]
+        return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver)
+    end
+end
+
+function calculate_gradient(ψ, Hψ, H, Λ, res, eap_grad::EAPrecGradient)
+    Nk = size(ψ)[1]
+    Pks = eap_grad.Pks;
+    σ = calculate_shift(ψ, Hψ, H, Λ, res, eap_grad.shift)
+
+    #this is done twice
+    #for ik = 1:length(Pks)
+    #    precondprep!(Pks[ik], ψ[ik]; shift = σ[ik])
+    #end
+
+    #calculate good initial guess
+    P_res = [ Pks[ik] \ res[ik] for ik = 1:Nk]
+    G = [ψ[ik]'P_res[ik] for ik = 1:Nk]
+    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
+    ψ0 = [P_res[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
+
+
+    Hinv_res = solve_H(eap_grad.krylov_solver, ψ0, H, res, σ, eap_grad.itmax, eap_grad.atol, eap_grad.rtol, Pks, eap_grad.h_solver)
+    
+    #project to tangent space?
+    G = [ψ[ik]'Hinv_res[ik] for ik = 1:Nk]
+    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
+    return [Hinv_res[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
+end
+
 
 
 struct PrecGradient <: AbstractGradient 
