@@ -93,17 +93,16 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ
         Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik = 1:Nk]
         res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
-        # callback and test convergence
-        if info.converged
-            break
-        end
+
 
         info = (; ham=H, ψ,basis, converged = is_converged(info), stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
         energies, algorithm="RCG")
 
         callback(info)
-        # one additional step
- 
+        # callback and test convergence
+        if info.converged
+            break
+        end
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)

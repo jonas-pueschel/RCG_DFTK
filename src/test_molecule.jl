@@ -13,7 +13,7 @@ include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
 
-model, basis = graphene_setup(; Ecut = 50);
+model, basis = GaAs_setup(; Ecut = 50);
 
 # Convergence we desire in the residual
 tol = 1e-9;
@@ -37,7 +37,7 @@ is_converged = ResidualEvalConverged(tol, callback)
 
 
 shift = CorrectedRelativeΛShift(1.1) #shift Hk with -1.1 * Λk to try to make Ham pd
-gradient = EAGradient(3, shift; krylov_solver = Krylov.minres) #Ham may not be pd --> minres
+gradient = EAGradient(basis, 8, shift; krylov_solver = Krylov.minres) #Ham may not be pd --> minres
 stepsize = ExactHessianStep(2.5)
 backtracking = GreedyBacktracking(ArmijoRule(0.05, 0.5), 10, 10)
 

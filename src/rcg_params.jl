@@ -665,27 +665,27 @@ function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, 
     Nk = size(ψ)[1]
     if (stepsize.τ_old === nothing)
         #first step
-        τ = τ_0
+        τ = [stepsize.τ_0 for ik = 1:Nk];
     else
-        temp = [real(tr(T_η_old[ik]'res[ik])) for ik = 1:Nk]
-        desc_old = stepsize.desc_old
-        if (is_odd)
+        temp = [real(tr(T_η_old[ik]'res[ik])) for ik = 1:Nk];
+        desc_old = stepsize.desc_old;
+        if (stepsize.is_odd)
             #short step size
-            τ = [τ_old[ik] * abs((- desc_old[ik] + temp[ik]) / (-desc[ik] - desc_old[ik] + 2 * temp[ik])) for ik = 1:Nk]
+            τ = [stepsize.τ_old[ik] * abs((- stepsize.desc_old[ik] + temp[ik]) / (-desc[ik] - stepsize.desc_old[ik] + 2 * temp[ik])) for ik = 1:Nk];
         else
             #long step size
-            τ = [τ_old[ik] * abs((- desc_old[ik])/(- desc_old[ik] + temp[ik])) for ik = 1:Nk]
+            τ = [stepsize.τ_old[ik] * abs((- stepsize.desc_old[ik])/(- stepsize.desc_old[ik] + temp[ik])) for ik = 1:Nk];
         end
     end
     #apply min, max
-    τ = [min(max(τ[ik], stepsize.τ_min), stepsize.τ_max) for ik = 1:Nk]
+    τ = [min(max(τ[ik], stepsize.τ_min), stepsize.τ_max) for ik = 1:Nk];
 
     #update params
-    stepsize.desc_old = desc
-    stepsize.is_odd = !stepsize.is_odd
-    stepsize.τ_old = τ
+    stepsize.desc_old = desc;
+    stepsize.is_odd = !stepsize.is_odd;
+    stepsize.τ_old = τ;
     
-    return τ
+    return τ;
 end
 
 
@@ -710,7 +710,7 @@ function check_rule(E_current, E_next, τ, desc, rule::NonmonotoneRule)
         #initialize c on first step
         rule.c = E_current;
     end
-    return E_next <= rule.c + rule.β * real(sum(τ .* desc)) 
+    return E_next <= rule.c + rule.β * real(sum(τ .* desc));
 end
 function backtrack!(τ, rule::NonmonotoneRule)
     τ .= rule.δ * τ
