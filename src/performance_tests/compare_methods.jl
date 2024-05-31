@@ -18,8 +18,9 @@ include("../setups/all_setups.jl")
 include("./compare_methods_tikz.jl")
 
 #general params
-tol = 1e-9
-
+tol = 1e-9;
+generate_plots = false;
+show_plots = true;
 
 #Ecut 90 sind die korrekten Daten
 
@@ -344,24 +345,29 @@ if (run_inEAR_8)
     push!(method_names, method_name)
 end
 
-#generate plots
-generate_tikz_plots(molecule, resls, times, cost_hams, method_names, init_res, tol)
-
-#plot results
-p = plot(title = "Iterations" * " " * molecule)
-q = plot(title = "Times" * " " * molecule)
-r = plot(title = "Hamiltonian equivalent" * " " * molecule)
-for (res, time, const_ham, method) = zip(resls, times, const_hams, method_names)
-    plot!(p , 1:length(res), res, label = method)
-    plot!(q, time, res, label = method)
-    plot!(r, const_ham, res, label = method)
+if (generate_plots)
+    #generate plots
+    generate_tikz_plots(molecule, resls, times, cost_hams, method_names, init_res, tol)
 end
-plot!(p, yscale=:log10, minorgrid=true);
-display(p);
-plot!(q, yscale=:log10, minorgrid=true);
-display(q);
-plot!(r, yscale=:log10, minorgrid=true);
-display(r);
+
+
+if (show_plots)
+    #plot results
+    p = plot(title = "Iterations" * " " * molecule)
+    q = plot(title = "Times" * " " * molecule)
+    r = plot(title = "Hamiltonian equivalent" * " " * molecule)
+    for (res, time, const_ham, method) = zip(resls, times, const_hams, method_names)
+        plot!(p , 1:length(res), res, label = method)
+        plot!(q, time, res, label = method)
+        plot!(r, const_ham, res, label = method)
+    end
+    plot!(p, yscale=:log10, minorgrid=true);
+    display(p);
+    plot!(q, yscale=:log10, minorgrid=true);
+    display(q);
+    plot!(r, yscale=:log10, minorgrid=true);
+    display(r);
+end
 
 
 
