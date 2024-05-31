@@ -1,4 +1,4 @@
-function H2_setup(;Ecut = 15)
+function H2_setup(;Ecut = 50)
     kgrid = [1, 1, 1]       # k-point grid
     #Ecut = 5                # kinetic energy cutoff in Hartree
     

@@ -103,7 +103,7 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
     push!(callback.times, time_ms)
 
     rcg_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["inner_timers"];
-    calls_DftHamiltonian = rcg_timer["DftHamiltonian multiplication"]["n_calls"];
+    calls_DftHamiltonian = haskey(rcg_timer["DftHamiltonian multiplication"]["inner_timers"], "local+kinetic") ?  rcg_timer["DftHamiltonian multiplication"]["inner_timers"]["local+kinetic"]["n_calls"] : 0;
     calls_energy_hamiltonian = rcg_timer["energy_hamiltonian"]["n_calls"];
     calls_compute_density = rcg_timer["compute_density"]["n_calls"];
     calls_apply_K =  haskey(rcg_timer, "apply_K") ? rcg_timer["apply_K"]["n_calls"] : 0;
@@ -113,17 +113,29 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
     push!(callback.calls_energy_hamiltonian, calls_energy_hamiltonian);
     push!(callback.calls_DftHamiltonian, calls_DftHamiltonian);
 
-    callback.time_DftHamiltonian = rcg_timer["DftHamiltonian multiplication"]["total_time_ns"];
+    #total_time_ns 
+    callback.time_DftHamiltonian = rcg_timer["DftHamiltonian multiplication"]["time_ns"];
     callback.time_energy_hamiltonian = rcg_timer["energy_hamiltonian"]["total_time_ns"];
     callback.time_compute_density = rcg_timer["compute_density"]["total_time_ns"];
-    callback.time_apply_K =  haskey(rcg_timer, "apply_K") ? rcg_timer["apply_K"]["total_time_ns"] : 0.0;
+    callback.time_apply_K =  haskey(rcg_timer, "apply_K") ? rcg_timer["apply_K"]["total_time_ns"] : 0;
 
 end
 struct EvalSCF <: AbstractEvalMethod end
 function update_callback(callback::ResidualEvalCallback, ::EvalSCF)
+    if (!haskey(TimerOutputs.todict(DFTK.timer)["inner_timers"], "self_consistent_field"))
+        #sometimes happens with H1-gradient, but no idea why TODO?
+        push!(callback.calls_apply_K, 0)
+        push!(callback.calls_compute_density, 0)
+        push!(callback.calls_energy_hamiltonian, 0)
+        push!(callback.calls_DftHamiltonian, 0)
+        return
+    end
+
     scf_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["self_consistent_field"]["inner_timers"]
     #TODO somehow determine the eigen function?
-    calls_DftHamiltonian = scf_timer["LOBPCG"]["inner_timers"]["DftHamiltonian multiplication"]["n_calls"]
+    temp = haskey(scf_timer, "local+kinetic") ? scf_timer["local+kinetic"]["n_calls"] : 0
+    calls_DftHamiltonian = scf_timer["LOBPCG"]["inner_timers"]["DftHamiltonian multiplication"]["inner_timers"]["local+kinetic"]["n_calls"] 
+        + temp; 
     calls_energy_hamiltonian = scf_timer["energy_hamiltonian"]["n_calls"]
     calls_compute_density = scf_timer["compute_density"]["n_calls"]
     calls_apply_K = 0
@@ -155,7 +167,8 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     push!(callback.times, time_ms);
 
     dcm_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"];#["direct_minimization"]["inner_timers"]
-    calls_DftHamiltonian = haskey(dcm_timer, "DftHamiltonian multiplication") ? dcm_timer["DftHamiltonian multiplication"]["n_calls"] : 0;
+    calls_DftHamiltonian = haskey(dcm_timer, "DftHamiltonian multiplication") ? dcm_timer["DftHamiltonian multiplication"]["inner_timers"]["local+kinetic"]["n_calls"] : 0;
+    calls_DftHamiltonian += haskey(dcm_timer, "local+kinetic") ? dcm_timer["local+kinetic"]["n_calls"] : 0;
     calls_energy_hamiltonian = dcm_timer["energy_hamiltonian"]["n_calls"];
     calls_compute_density = dcm_timer["compute_density"]["n_calls"];
     calls_apply_K = 0;

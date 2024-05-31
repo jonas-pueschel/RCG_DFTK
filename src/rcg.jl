@@ -125,6 +125,11 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ
         desc = [tr(η[ik]'res[ik]) for ik in 1:Nk]
         for ik = 1:Nk   
             if (real(desc[ik]) >= 0)
+                #println("Warning: this direction is not a desc dir!")
+                
+                #restarting
+                #Note: it may be possible that the ea gradient is not a descent direction
+                #this cannot be caught here!
                 η[ik] = - grad[ik]
                 desc[ik] = - gamma[ik]
             end

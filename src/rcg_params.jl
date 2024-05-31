@@ -50,7 +50,7 @@ mutable struct EAGradient <: AbstractGradient
     const h_solver::AbstractHSolver   #type of solver for H 
     Hinv_ψ
 
-    function EAGradient(itmax::Int64, shift; rtol = 1e-16, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver())
+    function EAGradient(basis::PlaneWaveBasis{T}, itmax::Int64, shift; rtol = 1e-16, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver()) where {T}
         Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
     end
@@ -77,20 +77,9 @@ struct RelativeEigsShift <: AbstractShiftStrategy
 end
 function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
     Nk = size(ψ)[1] 
-    λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    λ_min = [min(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
     #println(λ_min)
     return [- λ_min[ik] * shift.μ for ik = 1:Nk]
-end
-
-struct PDEigsShift <: AbstractShiftStrategy
-    μ::Float64
-end
-function calculate_shift(ψ, Hψ, H, Λ, res, shift::PDEigsShift)
-    Nk = size(ψ)[1] 
-    λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
-    fac = [ λ_min[ik] < 0 ? (1 + shift.μ) : 1/(1 + shift.μ) for ik = 1:Nk]
-    return [- λ_min[ik] * fac[ik] for ik = 1:Nk]
-
 end
 
 struct RelativeΛShift <: AbstractShiftStrategy 
@@ -99,6 +88,25 @@ end
 
 function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeΛShift)
     return - shift.μ * Λ
+end
+
+struct CorrectedRelativeΛShift <: AbstractShiftStrategy 
+    μ::Float64
+end
+
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift)
+    #correcting
+    Nk = size(ψ)[1] 
+    Σ = []
+    for ik = 1:Nk
+        s, U = eigen(Λ[ik]) #TODO cast to real may change eigvals?
+        #println(max(real(s)...))
+        σ = broadcast(x -> real(x) < 0 ? - shift.μ * x :  (shift.μ - 2) * x , s)
+        Σk = U * Diagonal(σ) * U'
+        push!(Σ, Σk)
+    end
+    #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
+    return Σ
 end
 
 struct TotalHSolver <: AbstractHSolver end
@@ -202,7 +210,8 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     σ = calculate_shift(ψ, Hψ, H, Λ, res, ea_grad.shift)
 
     #calculate good initial guess
-    ψ0 = [ψ[ik] / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
+    Pres = [ea_grad.Pks[ik] \ res[ik] for ik = 1:Nk]
+    ψ0 = [(ψ[ik] - Pres[ik]) / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
 
     ea_grad.Hinv_ψ = solve_H(ea_grad.krylov_solver, ψ0, H, ψ, σ, ea_grad.itmax, ea_grad.atol, ea_grad.rtol, ea_grad.Pks, ea_grad.h_solver)
     Ga = [ψ[ik]'ea_grad.Hinv_ψ[ik] for ik = 1:Nk]
@@ -621,6 +630,23 @@ function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, 
     return get_constant_step(stepsize.τ_const, Nk)
 end
 
+struct ScaledStepSize <:AbstractStepSize
+    stepsize::AbstractStepSize
+    s::Float64
+end
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ScaledStepSize)
+    return stepsize.s * calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize.stepsize)
+end
+
+mutable struct InitScaledStepSize <:AbstractStepSize
+    stepsize::AbstractStepSize
+    s::Float64
+end
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::InitScaledStepSize)
+    temp = stepsize.s * calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize.stepsize);
+    stepsize.s = 1.0;
+    return temp;
+end
 
 #Note: This may only show intended behaviour for β ≡ 0, i.e. η = -grad
 mutable struct BarzilaiBorweinStep <: AbstractStepSize
@@ -661,6 +687,8 @@ function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, 
     
     return τ
 end
+
+
 
 abstract type AbstractBacktrackingRule end
 
@@ -767,18 +795,39 @@ mutable struct GreedyBacktracking <: AbstractBacktracking
     end
 end
 
+# this function allows to plot how goof τ is chosen. minimum should be at 1.0
+# function plot_τ_quality(f)
+#     x = range(0, 2, length=50)
+#     y = f.(x)
+#     display(plot(x,y))
+# end
 
 function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
     retraction::AbstractRetraction, stepsize::AbstractStepSize, backtracking::GreedyBacktracking)
+
+    
+    # τ = nothing
+    # function f(x)
+    #     fψ_next, fρ_next, fenergies_next, fH_next = do_step(basis, occupation, ψ, η, x * τ, retraction)
+    #     Nk = size(fψ_next)[1]
+    #     fHψ = fH_next * fψ_next
+    #     fΛ = [fψ_next[ik]'fHψ[ik] for ik = 1:Nk]
+    #     fΛ = 0.5 * [(fΛ[ik] + fΛ[ik]') for ik = 1:Nk]
+    #     fres = [fHψ[ik] - fψ_next[ik] * fΛ[ik] for ik = 1:Nk]
+    #     lst = [tr(fres[ik]'η[ik]) for ik = 1:Nk]
+    #     lst = [real(lst[ik])^2 for ik = 1:Nk]
+    #     return(real(sum(lst)))
+    # end
 
     if ((backtracking.iter += 1)%backtracking.recalculate != 0 && !isnothing(backtracking.τ_old))
         #try to reuse old step size
         τ = backtracking.τ_old
 
-        ψ_next, ρ_next, energies_next, H_next = do_step(basis, occupation, ψ, η, backtracking.τ_old, retraction)
+        ψ_next, ρ_next, energies_next, H_next = do_step(basis, occupation, ψ, η, τ, retraction)
         
         if check_rule(energies.total, energies_next.total, τ, desc, backtracking.rule)
             update_rule!(energies_next.total, backtracking.rule)
+            # plot_τ_quality(f)
             return (;ψ_next, ρ_next, energies_next, H_next, τ)
         end 
     end
@@ -805,7 +854,11 @@ function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occu
         end 
     end
 
+
+    # plot_τ_quality(f)
+
     backtracking.τ_old = τ
+    #println(τ)
     update_rule!(energies_next.total, backtracking.rule)
     return (;ψ_next, ρ_next, energies_next, H_next, τ)
 end

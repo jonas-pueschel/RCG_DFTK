@@ -7,7 +7,8 @@ function GaAs_setup(;Ecut = 25)
     Ga = ElementPsp(:Ga, psp=load_psp("hgh/lda/ga-q3"))
     As = ElementPsp(:As, psp=load_psp("hgh/lda/as-q5"))
     atoms = [Ga, As]
-    positions = [ones(3)/8 + [0.24, -0.33, 0.12] / 15, -ones(3)/8]
+    positions = [ones(3)/8 #+ [0.24, -0.33, 0.12] / 15
+                    , -ones(3)/8]
     
     model = model_LDA(lattice, atoms, positions)
     kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
