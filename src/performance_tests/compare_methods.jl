@@ -2,7 +2,6 @@ using Pkg
 Pkg.activate("./src")
 Pkg.instantiate()
 
-using BSON
 using Optim
 using LineSearches
 
