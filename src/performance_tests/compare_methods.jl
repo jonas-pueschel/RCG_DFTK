@@ -43,23 +43,28 @@ run_pdcm_lbfgs  = true
 
 #calculate initial value
 init_iter = 1;
-ψ1 = nothing;
-while true
-    println("find ψ1...");
-    try
-        scfres_start = DFTK.self_consistent_field(basis; maxiter = init_iter, nbandsalg = DFTK.FixedBands(model));
-        ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
 
-        #try if the chosen value works
-        scfres_test_ψ1 = DFTK.self_consistent_field(basis; ψ = ψ1 , maxiter = 1);
-        println("found.");
-        break;
-    catch e
-        println(e);
-        println("failed...");
-        continue;
+function find_ψ1()
+    println("find ψ1...");
+    while true
+        try
+            scfres_start = DFTK.self_consistent_field(basis; maxiter = init_iter, nbandsalg = DFTK.FixedBands(model));
+            ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
+    
+            #try if the chosen value works
+            DFTK.self_consistent_field(basis; ψ = ψ1 , maxiter = 1);
+            
+            println("found.");
+            return ψ1
+        catch e
+            println(e);
+            println("failed, trying again...");
+            continue;
+        end
     end
 end
+ψ1 = find_ψ1();
+
 
 defaultCallback = RcgDefaultCallback();
 resls = []
@@ -338,6 +343,9 @@ if (run_inEAR_8)
     push!(const_hams, callback_estimate_time(callback, molecule)[1:end-1])
     push!(method_names, method_name)
 end
+
+#generate plots
+generate_tikz_plots(molecule, resls, times, cost_hams, method_names, init_res, tol)
 
 #plot results
 p = plot(title = "Iterations" * " " * molecule)
