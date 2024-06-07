@@ -51,9 +51,10 @@ mutable struct MatrixShiftedTPA{T <: Real} <: AbstractShiftedTPA
     basis::PlaneWaveBasis
     kpt::Kpoint
     kin::AbstractVector{T}  # kinetic energy of every G
-    Λ::AbstractMatrix 
-    eigs::AbstractVector{T}
-    U::AbstractMatrix 
+    Λ::Union{Nothing,AbstractMatrix}
+    eigs::Union{Nothing,AbstractVector{T}}
+    U::Union{Nothing,AbstractMatrix}
+    mean_kin::Union{Nothing, Vector{T}} 
     default_shift::T
 end
 
@@ -65,7 +66,7 @@ function MatrixShiftedTPA(basis::PlaneWaveBasis{T}, kpt::Kpoint) where {T}
     #      it's better to pass a HamiltonianBlock directly and read the computed values.
     kinetic_term = only(kinetic_term)
     kin = DFTK.kinetic_energy(kinetic_term, basis.Ecut, Gplusk_vectors_cart(basis, kpt))
-    MatrixShiftedTPA{T}(basis, kpt, kin, nothing, nothing)
+    MatrixShiftedTPA{T}(basis, kpt, kin, nothing, nothing, nothing, nothing, 0.5)
 end
 function MatrixShiftedTPA(ham::HamiltonianBlock; kwargs...)
     MatrixShiftedTPA(ham.basis, ham.kpoint)
@@ -73,9 +74,15 @@ end
 
 @views function ldiv!(Y, P::MatrixShiftedTPA, R)
     Y .= Y*P.U
-
-    Threads.@threads for n = 1:size(Y, 2)
-        Y[:, n] ./=  (P.kin .+ P.default_shift .+ P.eigs[n])
+    #println(P.eigs)
+    if isnothing(P.mean_kin)
+        Threads.@threads for n = 1:size(Y, 2)
+            Y[:, n] ./=  (P.kin .+ P.default_shift .+ P.eigs[n])
+        end
+    else
+        Threads.@threads for n = 1:size(Y, 2)
+            Y[:, n] ./=  (P.kin .+ P.mean_kin[n] .+ P.eigs[n])
+        end
     end
     Y .= Y*P.U'
 
@@ -88,21 +95,43 @@ ldiv!(P::MatrixShiftedTPA, R) = ldiv!(R, P, R)
 @views function mul!(Y, P::MatrixShiftedTPA, R)
     Y .= Y*P.U
     #TODO can we use Λ here?
-    Threads.@threads for n = 1:size(Y, 2)
-        Y[:, n] .*=  (P.kin .+ P.default_shift .+ P.eigs[n])
+
+    if isnothing(P.mean_kin)
+        Threads.@threads for n = 1:size(Y, 2)
+            Y[:, n] .*=  (P.kin .+ P.default_shift .+ P.eigs[n])
+        end
+    else
+        Threads.@threads for n = 1:size(Y, 2)
+            Y[:, n] .*=  (P.kin .+ P.mean_kin[n] .+ P.eigs[n])
+        end
     end
+
     Y .= Y*P.U'
     Y
 end
 (Base.:*)(P::MatrixShiftedTPA, R) = mul!(copy(R), P, R)
 
-
 function update_shiftedTPA!(P::MatrixShiftedTPA{T}, σ::Matrix{ComplexF64}) where {T}
+    #TODO pass?
     P.Λ = σ;
-    if (norm(σ == 0)) 
+    if (norm(σ) == 0) 
         P.eigs = [0.0 for n = 1:size(σ, 1)]
         P.U = I((σ, 1));
     else
-        P.eigs, P.U = eigen(σ);
+        temp, P.U = eigen(σ);
+        P.eigs = real(temp);
+        #if (min(P.eigs...) < 0)
+        #    P.eigs.-= min(P.eigs...)
+        #end
     end
+end
+
+function DFTK.precondprep!(P::MatrixShiftedTPA, X::AbstractArray)
+    Y = X*P.U
+    P.mean_kin = [real(dot(x, Diagonal(P.kin), x)) for x in eachcol(Y)]
+end
+DFTK.precondprep!(P::MatrixShiftedTPA, ::Nothing) = 1
+
+function update_shiftedTPA!(P::DFTK.PreconditionerTPA{T}, σ) where {T}
+    #do nothing
 end

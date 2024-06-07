@@ -60,22 +60,24 @@ function (callback::ResidualEvalCallback)(info)
     push!(callback.norm_residuals, norm_res);
     callback.n_iter += 1
 
-    #perform the default callback
-    converged = false;
-    if (!isnothing(callback.defaultCallback))
-        if (!haskey(info, :converged))
-            #sometimes converged is not set, so we set it here. The reason may be a bug?
-            info_temp = (;info..., norm_res, converged = false);
-        else
-            converged = info.converged;
-            info_temp = (;info..., norm_res);
-        end
-        callback.defaultCallback(info_temp);
-    end
-
     #update callback
     if (!isnothing(callback.method) )
         update_callback(callback, callback.method);
+    end
+
+    #perform the default callback
+    converged = false;
+    calls_ham = length(callback.calls_DftHamiltonian) > 0 ? callback.calls_DftHamiltonian[end] * 1.0/ (size(info.ψ)[1] * size(info.ψ[1])[2]) : 0.0;
+    calls_ham -= length(callback.calls_DftHamiltonian) > 1 ? callback.calls_DftHamiltonian[end-1]* 1.0/ (size(info.ψ)[1] * size(info.ψ[1])[2]) : 0.0;
+    if (!isnothing(callback.defaultCallback))
+        if (!haskey(info, :converged))
+            #sometimes converged is not set, so we set it here. The reason may be a bug?
+            info_temp = (;info..., norm_res, converged = false, calls_ham);
+        else
+            converged = info.converged;
+            info_temp = (;info..., norm_res, calls_ham);
+        end
+        callback.defaultCallback(info_temp);
     end
 
     # update n_iter and re-enable timer

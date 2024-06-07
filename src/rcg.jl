@@ -106,7 +106,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
-        gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
+        gamma = [real(dot(res[ik],grad[ik])) for ik = 1:Nk]
 
         # calculate transport of η
         T_η_old = calculate_transport(ψ, η, τ, ψ_old, transport_η, retraction, gradient; is_prev_dir = true)

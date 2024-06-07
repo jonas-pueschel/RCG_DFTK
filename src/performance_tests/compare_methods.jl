@@ -17,29 +17,30 @@ include("../setups/all_setups.jl")
 include("./compare_methods_tikz.jl")
 
 #general params
-tol = 1e-9;
+tol = 1e-7;
 generate_plots = false;
 show_plots = true;
 
 #Ecut 90 sind die korrekten Daten
 
-#model, basis, molecule = (silicon_setup(; Ecut = 90)..., "Silicon");
-model, basis, molecule = (GaAs_setup(; Ecut = 90)..., "GaAs");
+#model, basis, molecule = (graphene_setup(; Ecut = 40)..., "Graphene");
+model, basis, molecule = (silicon_setup(; Ecut = 30,a = 11.5)..., "Silicon");
+#model, basis, molecule = (GaAs_setup(; Ecut = 30)..., "GaAs");
 
 Nk = length(basis.kpoints);
 
 run_rcg_EA      = true
-run_rcg_inEA_3  = true
-run_rcg_inEA_8  = true
-run_rcg_H1      = true
-run_EAR         = true
-run_inEAR_3     = true
-run_inEAR_8     = true
+run_rcg_inEA_3  = false
+run_rcg_inEA_8  = false
+run_rcg_H1      = false
+run_EAR         = false
+run_inEAR_3     = false
+run_inEAR_8     = false
 run_H1R         = false
 run_scf_opt     = true
 run_scf_naive   = false
 run_pdcm_cg     = false
-run_pdcm_lbfgs  = true
+run_pdcm_lbfgs  = false
 
 #calculate initial value
 init_iter = 1;
@@ -73,11 +74,17 @@ const_hams = []
 method_names = []
 
 function  callback_estimate_time(callback, molecule)
-    if (molecule == "GaAs")
-        β = [ 4.83820040322115e8, 2.883595696697497e9, 2.3567767525293593e9, 3.7665307878829656e9] / 4.83820040322115e8
-    elseif (molecule == "Silicon")
-        β = [ 1.641290230943121e8, 7.237020217004423e8, 3.5292680939192266e9, 3.7200176048407316e8] / 1.641290230943121e8
-    end
+    β = [ 1, 2, 5, 5]
+
+#    if (molecule == "GaAs")
+#        β = [ 4.83820040322115e8, 2.883595696697497e9, 2.3567767525293593e9, 3.7665307878829656e9] / 4.83820040322115e8
+#    elseif (molecule == "Silicon")
+#        β = [ 1.641290230943121e8, 7.237020217004423e8, 3.5292680939192266e9, 3.7200176048407316e8] / 1.641290230943121e8
+#    else
+#        #TODO
+#        β = [ 1, 2, 4, 4]
+#    end
+    
 
     ress = callback.norm_residuals
     hams = callback.calls_DftHamiltonian
@@ -110,8 +117,8 @@ if (run_rcg_EA)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = ExactHessianStep(2.5), 
-        gradient = EAGradient(basis, 100, CorrectedRelativeΛShift(1.1)), 
-        backtracking = GreedyBacktracking(ArmijoRule(0.05, 0.5), 0, 10)
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 100), 
+        backtracking = GreedyBacktracking(ArmijoRule(0.2, 0.5), 0, 100)
     );
     println(DFTK.timer)
 
@@ -131,7 +138,7 @@ if (run_rcg_inEA_3)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = ExactHessianStep(2.5), 
-        gradient = EAGradient(basis, 3, CorrectedRelativeΛShift(1.1)), 
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 3), 
         backtracking = GreedyBacktracking(ArmijoRule(0.05, 0.5), 0, 100)
     );
     println(DFTK.timer)
@@ -173,7 +180,7 @@ if (run_EAR)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = BarzilaiBorweinStep(1e-4, 1.0, 1.0), 
-        gradient = EAGradient(basis, 100, CorrectedRelativeΛShift(1.1)), 
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 100), 
         backtracking = StandardBacktracking(NonmonotoneRule(0.95, 1e-4, 0.5), 20)
     );
     println(DFTK.timer)
@@ -194,7 +201,7 @@ if (run_inEAR_3)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = BarzilaiBorweinStep(1e-4, 1.0, 1.0), 
-        gradient = EAGradient(basis, 3, CorrectedRelativeΛShift(1.1)), 
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 3), 
         backtracking = StandardBacktracking(NonmonotoneRule(0.95, 1e-4, 0.5), 20)
     );
     println(DFTK.timer)
@@ -312,7 +319,7 @@ if (run_rcg_inEA_8)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = ExactHessianStep(2.5), 
-        gradient = EAGradient(basis, 8, CorrectedRelativeΛShift(1.1)), 
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 8), 
         backtracking = GreedyBacktracking(ArmijoRule(0.05, 0.5), 0, 100)
     );
     println(DFTK.timer)
@@ -333,7 +340,7 @@ if (run_inEAR_8)
         callback = callback, 
         is_converged = ResidualEvalConverged(tol, callback),
         stepsize = BarzilaiBorweinStep(1e-4, 1.0, 1.0), 
-        gradient = EAGradient(basis, 8, CorrectedRelativeΛShift(1.1)), 
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(1.1); itmax = 8), 
         backtracking = StandardBacktracking(NonmonotoneRule(0.95, 1e-4, 0.5), 20)
     );
     println(DFTK.timer)

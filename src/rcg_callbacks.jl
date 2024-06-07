@@ -21,8 +21,8 @@ function RcgDefaultCallback(; show_time=true)
 
         # TODO We should really do this properly ... this is really messy
         if info.n_iter == 1
-            println("n     Energy            log10(|res|)   log10(ΔE)   log10(Δρ)   Δtime")
-            println("---   ---------------   ------------   ---------   ---------   -----")
+            println("n     Energy            log10(|res|)   log10(ΔE)   log10(Δρ)   Δtime     calls_ham")
+            println("---   ---------------   ------------   ---------   ---------   -----     ---------")
 
         end
         E    = isnothing(info.energies) ? Inf : info.energies.total
@@ -51,7 +51,14 @@ function RcgDefaultCallback(; show_time=true)
         else
             resstr = " "^9
         end
-        @printf "% 3d   %s   %s   %s   %s   %s" info.n_iter Estr resstr ΔE Δρstr tstr
+
+        if (haskey(info, :calls_ham) )
+            calls_hamstr = !isnothing(info.calls_ham) ? " " * (@sprintf "%8.2f" info.calls_ham) : " "^9
+        else
+            calls_hamstr = " "^9
+        end
+
+        @printf "% 3d   %s   %s   %s   %s   %s   %s" info.n_iter Estr resstr ΔE Δρstr tstr calls_hamstr
         println()
         prev_energy = info.energies.total
         prev_time = time_ns()
