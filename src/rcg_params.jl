@@ -40,7 +40,9 @@ end
 abstract type AbstractHSolver end
 abstract type AbstractShiftStrategy end
 
-mutable struct EAGradient <: AbstractGradient 
+
+mutable struct EAGradient <: AbstractGradient
+    const basis
     const itmax::Int64
     const rtol::Float64
     const atol::Float64
@@ -50,14 +52,13 @@ mutable struct EAGradient <: AbstractGradient
     const h_solver::AbstractHSolver   #type of solver for H 
     Hinv_ψ
 
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, rtol = 1e-1, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver(), Pks = nothing) where {T}
+    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, rtol = 1e-1, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = NaiveHSolver(), Pks = nothing) where {T}
         if isnothing(Pks)
             Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         end
-        return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
+        return new(basis, itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
     end
 end
-
 
 
 struct ConstantShift <: AbstractShiftStrategy 
@@ -84,6 +85,16 @@ function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
     return [- λ_min[ik] * shift.μ for ik = 1:Nk]
 end
 
+
+struct RelativeEigsShift2 <: AbstractShiftStrategy
+    μ::Float64
+end
+function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift2)
+    Nk = size(ψ)[1] 
+    λ_min = [max(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
+    #println(λ_min)
+    return [λ_min[ik] < 0 ? - λ_min[ik] * shift.μ : - λ_min[ik] * (2 - shift.μ) for ik = 1:Nk]
+end
 struct RelativeΛShift <: AbstractShiftStrategy 
     μ::Float64
 end
@@ -111,39 +122,173 @@ function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift)
     return Σ
 end
 
-struct TotalHSolver <: AbstractHSolver end
-function solve_H(krylov_solver, ψ0, H, b, σ, itmax, inner_tols, Pks, ::TotalHSolver)
+struct LocalOptimalHSolver <: AbstractHSolver 
+    levels::Int
+end
+function solve_H(krylov_solver, ψ0, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, lohs::LocalOptimalHSolver)
     Nk = size(ψ0)[1]
     T = Base.Float64
 
-    pack(ψ) = copy(DFTK.reinterpret_real(DFTK.pack_ψ(ψ)))
-    unpack(x) = DFTK.unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
-    unsafe_unpack(x) = DFTK.unsafe_unpack_ψ(DFTK.reinterpret_complex(x), size.(ψ0))
-
-    x0 = pack(ψ0)
-    rhs = pack(b)
-
-    function apply_H(x)
-        ξ = unsafe_unpack(x)
-        return pack([H[ik] * ξ[ik] + ξ[ik] * σ[ik]])
+    function pack(Y::AbstractMatrix)
+        n_rows, n_cols = size(Y)
+        x = zeros(ComplexF64, n_rows * n_cols)
+        for j = 1:n_cols
+            x[(j-1) * n_rows + 1: j * n_rows] .= Y[:,j]
+        end
+        return copy(DFTK.reinterpret_real(x))
     end
 
-    J = LinearMap{T}(apply_H, size(x0, 1))
-
-    function apply_Prec(x)
-        ξ = unsafe_unpack(x)
-        Pξ = [ Pks[ik] \ ξ[ik] for ik = 1:Nk]
-        return pack(Pξ)
+    function unpack_general(x::AbstractVector, n_rows, n_cols)
+        y = DFTK.reinterpret_complex(x)
+        Y = zeros(ComplexF64, (n_rows, n_cols))
+        for j = 1:n_cols
+           Y[:,j] .=  y[(j-1) * n_rows + 1: j * n_rows]
+        end
+        return Y
     end
 
-    M = LinearMap{T}(apply_Prec, size(x0, 1))
+
+
+    function solveLocalOptimal(krylov_solver, A, x0, rhs, Prec, σk, itmax, tol)
+        # This can be made more efficient: using iterative blocks,
+        # a majority of these calculations can be reused!
+
+        n_rows, n_cols = size(x0)
+        unpack(x) = unpack_general(x, n_rows, n_cols)
+
+        x0 = pack(x0)
+        rhs = pack(rhs)
+
+        function apply_H(x)
+            Y = unpack(x)
+            return pack(A * Y +  Y * σk)
+        end
     
-    res = krylov_solver(J, rhs, x0; M, itmax, atol, rtol)
-    return unpack(res[1])
+        J = LinearMap{T}(apply_H, size(x0, 1))
+
+        function apply_Prec(x)
+            Y = unpack(x)
+            return pack(Prec * Y)
+        end
+        M = LinearMap{T}(apply_Prec, size(x0, 1))
+
+        x, stats = krylov_solver(J, rhs, x0; M, itmax, atol = tol, rtol = tol)
+        #if (!stats.solved)
+        #    print(stats)
+        #end
+
+        return unpack(x)
+    end
+    
+    result =  []
+    for (ik, ψk, Hψk, ψ0k, bk, σk, Pk) = zip(1:Nk, ψ, Hψ, ψ0, b, σ, Pks)
+
+        m = size(ψk)[2]
+        
+        #build preconditioned krylov space
+        Hk = H[ik]
+        Pbk = Pk \ bk
+        Hbk = Hk * bk
+        HPbk = Hk * Pbk
+        Hkrylov_orb = HPbk
+
+        # Pψk = Pk \ ψk
+        # HPψk = Hk * Pψk
+        # Φ,R = ortho_qr(hcat(ψk, bk, Pbk, Pψk))
+        # HΦ = hcat(Hψk, Hbk, HPbk, HPψk)/R
+
+        Φ,R = ortho_qr(hcat(ψk, bk, Pbk))
+        HΦ = hcat(Hψk, Hbk, HPbk)/R
+
+        Φx = ψ0k
+
+        PΦ = Pk \ Φ
+
+        A = Φ'HΦ
+        A = 0.5 * (A' + A)
+        #make it spd in normal space (does not affect riemannian grad)
+        A[1:m,1:m] +=  max(real(eigen(σk * I(m)).values)...) * I(m)
+        
+        x0 = Φ'ψ0k
+        rhs = Φ'bk
+        Prec = Φ'PΦ
+        Prec = 0.5 * (Prec' + Prec)
+
+        lvl = 1
+        while true
+            x = solveLocalOptimal(krylov_solver,  A, x0, rhs, Prec, σk, 100, inner_tols[ik] * 1e-4)
+
+            Φx = Φ * x
+            AΦx = HΦ * x + Φx * σk
+            
+            residual = AΦx - bk
+            normres = norm(residual)
+
+
+
+            #println(normres)
+            
+            if (normres < inner_tols[ik] || lvl >= lohs.levels || size(Hkrylov_orb)[2] == 0)    
+                if (lvl == lohs.levels || size(Hkrylov_orb)[2] == 0)
+                    #preemptive stop
+                end
+                push!(result, Φx)
+                break
+            end
+            #add dimension to krylov space
+
+            lvl += 1
+            #extend krylov space
+            krylov_orb = Pk \ Hkrylov_orb
+            #krylov_orb = Pk  \ HΦ
+
+            #only choose vectors sufficiently far away from Φ (if these values are small, condition of R is large)
+            idxs = [i for i = 1:size(krylov_orb)[2] if norm(krylov_orb[:,i] - Φ * (Φ'krylov_orb[:,i]))/norm(krylov_orb[:,i]) > 1e-8]
+            krylov_orb = krylov_orb[:, idxs]
+
+            add = krylov_orb - Φ * (Φ'krylov_orb);
+            add, R = ortho_qr(add);
+            #
+            #Φ,R = ortho_qr(hcat(Φ, krylov_orb))
+            
+
+            Hkrylov_orb = Hk * krylov_orb
+            Hadd = Hkrylov_orb - HΦ * (Φ'krylov_orb)
+            Hadd = Hadd /R
+
+            #TODO: make these more efficient!
+            m_add = length(idxs) 
+            A12 = Φ'Hadd
+            A21 = A12'
+            A22 = add'Hadd
+            A22 = 0.5 * (A22 + A22')
+            A = vcat(hcat(A  , A12),
+                     hcat(A21, A22))
+            x0 = vcat(x, zeros((m_add, m)))
+            rhs = vcat(rhs, zeros((m_add, m)))
+
+            Padd = Pk \ add
+            P12 = Φ'Padd
+            P21 = P12'
+            P22 = add'Padd
+            P22 = 0.5 * (P22 + P22')
+            Prec = vcat(hcat(Prec, P12),
+                        hcat(P21 , P22))
+
+            Φ = hcat(Φ, add)
+            HΦ =  hcat(HΦ, Hadd)
+            PΦ = hcat(PΦ, Padd)
+
+
+            #Prec = Φ'PΦ
+        end
+    end
+
+    return result 
 end
 
-struct KpointHSolver <: AbstractHSolver end
-function solve_H(krylov_solver, ψ0, H, b, σ, itmax, inner_tols, Pks, ::KpointHSolver)
+struct NaiveHSolver <: AbstractHSolver end
+function solve_H(krylov_solver, ψ0, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, ::NaiveHSolver)
     Nk = size(ψ0)[1]
     T = Base.Float64
 
@@ -199,6 +344,7 @@ function solve_H(krylov_solver, ψ0, H, b, σ, itmax, inner_tols, Pks, ::KpointH
 end
 
 
+
 function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     Nk = size(ψ)[1];
     σ = calculate_shift(ψ, Hψ, H, Λ, res, ea_grad.shift);
@@ -214,71 +360,20 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
 
     #calculate good initial guess
     Pres = [ea_grad.Pks[ik] \ res[ik] for ik = 1:Nk]
-    ψ0 = [(ψ[ik] - Pres[ik]) / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
     #ψ0 = [(ψ[ik]) / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
 
     inner_tols = [max(ea_grad.rtol * norm(res[ik]), ea_grad.atol) for ik = 1:Nk]
 
-    ea_grad.Hinv_ψ = solve_H(ea_grad.krylov_solver, ψ0, H, ψ, σ, ea_grad.itmax, inner_tols, ea_grad.Pks, ea_grad.h_solver)
+
+    X = solve_H(ea_grad.krylov_solver, Pres, H, res, σ, ψ, Hψ, ea_grad.itmax, inner_tols, ea_grad.Pks, ea_grad.h_solver)
+    ea_grad.Hinv_ψ = [(ψ[ik] - X[ik]) / (Λ[ik] + σ[ik] * I)  for ik = 1:Nk]
     Ga = [ψ[ik]'ea_grad.Hinv_ψ[ik] for ik = 1:Nk]
     return [ ψ[ik] - ea_grad.Hinv_ψ[ik] / Ga[ik] for ik = 1:Nk]
 end
 
-mutable struct EAPrecGradient <: AbstractGradient 
-    const itmax::Int64
-    const atol::Float64
-    const rtol::Float64
-    const Pks
-    const shift::AbstractShiftStrategy
-    const krylov_solver #solver for linear systems
-    const h_solver::AbstractHSolver   #type of solver for H 
-    #TODO Initial value calculation?
-    function EAPrecGradient(itmax::Int64, shift; rtol = 1e-2, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = KpointHSolver())
-        Pks = [PreconditionerShiftedTPA(basis, kpt) for kpt in basis.kpoints]
-        return new(itmax, rtol, atol, Pks, shift, krylov_solver, h_solver)
-    end
-end
-
-function calculate_gradient(ψ, Hψ, H, Λ, res, eap_grad::EAPrecGradient)
-    Nk = size(ψ)[1]
-    Pks = eap_grad.Pks;
-    σ = calculate_shift(ψ, Hψ, H, Λ, res, eap_grad.shift)
-
-    #this is done twice
-    #for ik = 1:length(Pks)
-    #    precondprep!(Pks[ik], ψ[ik]; shift = σ[ik])
-    #end
-
-    #calculate good initial guess
-    P_res = [ Pks[ik] \ res[ik] for ik = 1:Nk]
-    G = [ψ[ik]'P_res[ik] for ik = 1:Nk]
-    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
-    ψ0 = [P_res[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
 
 
-    Hinv_res = solve_H(eap_grad.krylov_solver, ψ0, H, res, σ, eap_grad.itmax, atol, Pks, eap_grad.h_solver)
-    
-    #project to tangent space?
-    G = [ψ[ik]'Hinv_res[ik] for ik = 1:Nk]
-    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
-    return [Hinv_res[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
-end
-
-
-
-struct PrecGradient <: AbstractGradient 
-    apply_prec
-end
-
-function calculate_gradient(ψ, Hψ, H, Λ, res, prec_grad::PrecGradient)
-    Nk = size(ψ)[1]
-    P_res = prec_grad.apply_prec(ψ, Hψ, H, Λ, res) 
-    G = [ψ[ik]'P_res[ik] for ik = 1:Nk]
-    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
-    return [P_res[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
-end
-
-abstract type AbstractRetraction end
+abstract type AbstractRetraction end 
 
 @kwdef mutable struct RetractionQR <: AbstractRetraction
     R = nothing
@@ -291,6 +386,7 @@ function ortho_qr(φk::ArrayType) where {ArrayType <: AbstractArray}
     R = convert(ArrayType, temp.R)[1:Nk, 1:Nk]
     return (Q,R)
 end
+
 
 #DFTK.@timing 
 function calculate_retraction(ψ, η, τ, ret_qr::RetractionQR)

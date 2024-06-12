@@ -14,20 +14,20 @@ include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
 
-#model, basis = graphene_setup(; Ecut = 50);
+model, basis = TiO2_setup(; Ecut = 50);
 
-model, basis, molecule = (silicon_setup(; Ecut = 50, a = 11.90)..., "Silicon");
+#model, basis = silicon_setup(; Ecut = 30, a = 10.26);
 
 
 # Convergence we desire in the residual
 tol = 1e-8;
 
-filled_occ = DFTK.filled_occupation(model);
-n_spin = model.n_spin_components;
-n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp);
+#filled_occ = DFTK.filled_occupation(model);
+#n_spin = model.n_spin_components;
+#n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp);
 
 #SCF Iterations here to 2 or 3
-scfres_start = self_consistent_field(basis; maxiter = 2,  nbandsalg = DFTK.FixedBands(model));
+scfres_start = self_consistent_field(basis; maxiter = 1,  nbandsalg = DFTK.FixedBands(model));
 ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
 
 defaultCallback = RcgDefaultCallback()
@@ -37,10 +37,11 @@ callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
 is_converged = ResidualEvalConverged(tol, callback)
 
 
-shift = CorrectedRelativeΛShift(1.1) #shift Hk with -1.1 * Λk to try to make Ham pd
+shift = CorrectedRelativeΛShift(1.01) #shift Hk with -1.01 * Λk to try to make Ham pd
+#shift = RelativeEigsShift2(1.1);
 gradient = EAGradient(basis, shift; 
-        itmax = 50,
-        rtol = 2,
+        rtol = 0.1,
+        h_solver = LocalOptimalHSolver(20),
         krylov_solver = Krylov.minres,
         Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         #Pks = [MatrixShiftedTPA(basis, kpt) for kpt in basis.kpoints]
@@ -49,7 +50,34 @@ gradient = EAGradient(basis, shift;
 #backtracking = GreedyBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), 10, 1)
 
 stepsize = ExactHessianStep(2.5);
-backtracking = GreedyBacktracking(ArmijoRule(0.1, 0.5), 0, 10)
+backtracking = GreedyBacktracking(ArmijoRule(0.05, 0.5), 0, 10)
+
+DFTK.reset_timer!(DFTK.timer)
+scfres_rcg1 = riemannian_conjugate_gradient(basis, ψ1; maxiter = 100, 
+        callback = callback, is_converged = is_converged,
+        #cg_param = ParamZero(),
+        stepsize = stepsize, gradient = gradient, backtracking = backtracking);
+println(DFTK.timer)
+
+
+#EARCG
+callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
+is_converged = ResidualEvalConverged(tol, callback)
+
+
+shift = CorrectedRelativeΛShift(1.01) #shift Hk with -1.1 * Λk to try to make Ham pd
+gradient = EAGradient(basis, shift; 
+        itmax = 3,
+        rtol = 1e-2,
+        krylov_solver = Krylov.minres,
+        Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
+        #Pks = [MatrixShiftedTPA(basis, kpt) for kpt in basis.kpoints]
+        ) #Ham may not be pd --> minres
+#stepsize = BarzilaiBorweinStep(0.1, 2.5, 1.0);
+#backtracking = GreedyBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), 10, 1)
+
+stepsize = ExactHessianStep(2.5);
+backtracking = GreedyBacktracking(ArmijoRule(0.01, 0.5), 0, 10)
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis, ψ1; maxiter = 100, 

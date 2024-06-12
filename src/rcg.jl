@@ -57,11 +57,12 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T}, ψ
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
-    
+  
+    T_η_old = nothing
     gamma = [real(tr(res[ik]'grad[ik])) for ik = 1:Nk]
     desc = - gamma
     η = - grad
-    T_η_old = nothing
+
 
     # give β the information from first iteration
     init_β(gamma, res, grad, cg_param)
