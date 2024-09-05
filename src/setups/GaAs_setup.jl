@@ -1,5 +1,5 @@
-function GaAs_setup(;Ecut = 25)
-    a = 10.68290949909  # GaAs lattice constant in Bohr
+function GaAs_setup(;Ecut = 25, a = 10.68290949909, kgrid = [2, 2, 2] )
+     # GaAs lattice constant in Bohr
     lattice = a / 2 * [[0 1 1.];
                        [1 0 1.];
                        [1 1 0.]]
@@ -12,7 +12,7 @@ function GaAs_setup(;Ecut = 25)
     
     model = model_LDA(lattice, atoms, positions)
     #model = model_PBE(lattice, atoms, positions)
-    kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
+    # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
     fft_size = compute_fft_size(model, Ecut; supersampling=ss)
     basis = PlaneWaveBasis(model; Ecut=Ecut, kgrid, fft_size=fft_size)

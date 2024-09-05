@@ -1,4 +1,4 @@
-function TiO2_setup(; Ecut = 25)
+function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2] )
     Ti = ElementPsp(:Ti, psp=load_psp("hgh/lda/ti-q4.hgh"))
     O  = ElementPsp(:O, psp=load_psp("hgh/lda/o-q6.hgh"))
     atoms     = [Ti, Ti, O, O, O, O]
@@ -15,7 +15,7 @@ function TiO2_setup(; Ecut = 25)
     
     #model = model_PBE(lattice, atoms, positions)
     model = model_LDA(lattice, atoms, positions)
-    kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
+     # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
     fft_size_ref = compute_fft_size(model, Ecut; supersampling=ss)
     basis_ref = PlaneWaveBasis(model; Ecut=Ecut, kgrid, fft_size=fft_size_ref)

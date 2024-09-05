@@ -1,10 +1,8 @@
-function  graphene_setup(;Ecut = 15)
-    L = 20  # height of the simulation box
-    kgrid = [6, 6, 1]
-
+function  graphene_setup(;Ecut = 15; kgrid = [6, 6, 1]; a = 4.66; L = 20  )
+    # height of the simulation box
 
     # Define the geometry and pseudopotential
-    a = 4.66  # lattice constant
+    # lattice constant
     a1 = a*[1/2,-sqrt(3)/2, 0]
     a2 = a*[1/2, sqrt(3)/2, 0]
     a3 = L*[0  , 0        , 1]

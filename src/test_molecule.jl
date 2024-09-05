@@ -14,8 +14,8 @@ include("./rcg.jl")
 include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
+model, basis = graphene_setup();
 
-model, basis = GaAs_setup(; Ecut = 50);
 
 
 # Convergence we desire in the residual
