@@ -13,6 +13,7 @@ function TiO2_setup(; Ecut = 25)
                  [0.0      8.79341  0.0];
                  [0.0      0.0      5.61098]];
     
+    #model = model_PBE(lattice, atoms, positions)
     model = model_LDA(lattice, atoms, positions)
     kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4

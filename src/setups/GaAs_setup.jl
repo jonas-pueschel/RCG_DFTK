@@ -11,6 +11,7 @@ function GaAs_setup(;Ecut = 25)
                     , -ones(3)/8]
     
     model = model_LDA(lattice, atoms, positions)
+    #model = model_PBE(lattice, atoms, positions)
     kgrid = [2, 2, 2]  # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
     fft_size = compute_fft_size(model, Ecut; supersampling=ss)

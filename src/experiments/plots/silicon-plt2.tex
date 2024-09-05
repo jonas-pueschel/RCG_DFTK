@@ -1,0 +1,141 @@
+% Recommended preamble:
+% \usetikzlibrary{arrows.meta}
+% \usetikzlibrary{backgrounds}
+% \usepgfplotslibrary{patchplots}
+% \usepgfplotslibrary{fillbetween}
+% \pgfplotsset{%
+%     layers/standard/.define layer set={%
+%         background,axis background,axis grid,axis ticks,axis lines,axis tick labels,pre main,main,axis descriptions,axis foreground%
+%     }{
+%         grid style={/pgfplots/on layer=axis grid},%
+%         tick style={/pgfplots/on layer=axis ticks},%
+%         axis line style={/pgfplots/on layer=axis lines},%
+%         label style={/pgfplots/on layer=axis descriptions},%
+%         legend style={/pgfplots/on layer=axis descriptions},%
+%         title style={/pgfplots/on layer=axis descriptions},%
+%         colorbar style={/pgfplots/on layer=axis descriptions},%
+%         ticklabel style={/pgfplots/on layer=axis tick labels},%
+%         axis background@ style={/pgfplots/on layer=axis background},%
+%         3d box foreground style={/pgfplots/on layer=axis foreground},%
+%     },
+% }
+
+\begin{tikzpicture}
+\begin{axis}[point meta max={nan}, point meta min={nan}, legend cell align={left}, legend columns={1}, title={}, title style={at={{(0.5,1)}}, anchor={south}, font={{\fontsize{14 pt}{18.2 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}, align={center}}, legend style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid, fill={rgb,1:red,1.0;green,1.0;blue,1.0}, fill opacity={1.0}, text opacity={1.0}, font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, text={rgb,1:red,0.0;green,0.0;blue,0.0}, cells={anchor={center}}, at={(1.02, 1)}, anchor={north west}}, axis background/.style={fill={rgb,1:red,1.0;green,1.0;blue,1.0}, opacity={1.0}}, anchor={north west}, xshift={1.0mm}, yshift={-1.0mm}, width={145.4mm}, height={99.6mm}, scaled x ticks={false}, xlabel={calls DftHamiltonian}, x tick style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}}, x tick label style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}, rotate={0}}, xlabel style={at={(ticklabel cs:0.5)}, anchor=near ticklabel, at={{(ticklabel cs:0.5)}}, anchor={near ticklabel}, font={{\fontsize{11 pt}{14.3 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, xmajorgrids={true}, xmin={13.882499999999936}, xmax={1219.3675}, xticklabels={{$250$,$500$,$750$,$1000$}}, xtick={{250.0,500.0,750.0,1000.0}}, xtick align={inside}, xticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, x grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, axis x line*={left}, x axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, scaled y ticks={false}, ylabel={$\|r^{(k)}\|_F$}, y tick style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}}, y tick label style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}, rotate={0}}, ylabel style={at={(ticklabel cs:0.5)}, anchor=near ticklabel, at={{(ticklabel cs:0.5)}}, anchor={near ticklabel}, font={{\fontsize{11 pt}{14.3 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, ymode={log}, log basis y={10}, ymajorgrids={true}, ymin={2.569450237590839e-10}, ymax={0.10730573274051716}, yticklabels={{$10^{-8}$,$10^{-6}$,$10^{-4}$,$10^{-2}$}}, ytick={{1.0e-8,1.0e-6,0.0001,0.01}}, ytick align={inside}, yticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, y grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, axis y line*={left}, y axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, colorbar={false}]
+    \addplot[color={rgb,1:red,0.0;green,0.6056;blue,0.9787}, name path={257}, draw opacity={1.0}, line width={1}, solid]
+        table[row sep={\\}]
+        {
+            \\
+            118.0  0.004097031554085895  \\
+            248.0  0.0007835963745867968  \\
+            357.0  3.834718068435137e-5  \\
+            463.0  3.025060113860971e-6  \\
+            557.0  2.8636538068384783e-7  \\
+            651.0  2.9605071316836964e-8  \\
+            756.0  3.782508152229036e-9  \\
+            845.0  4.5063469701348143e-10  \\
+        }
+        ;
+    \addlegendentry {EARCG}
+    \addplot[color={rgb,1:red,0.8889;green,0.4356;blue,0.2781}, name path={258}, draw opacity={1.0}, line width={1}, solid]
+        table[row sep={\\}]
+        {
+            \\
+            48.0  0.05183443983085294  \\
+            80.0  0.028562974519520626  \\
+            112.0  0.012447580105312023  \\
+            144.0  0.006611738478515224  \\
+            176.0  0.002958743421380364  \\
+            208.0  0.0018838358229308321  \\
+            240.0  0.0010117647269364362  \\
+            272.0  0.0006607411762222401  \\
+            304.0  0.0005182808157005631  \\
+            336.0  0.0003329949172246223  \\
+            368.0  0.00018875004740423538  \\
+            400.0  0.0001121104630843311  \\
+            432.0  5.845191218707891e-5  \\
+            464.0  3.480444575117658e-5  \\
+            496.0  2.3325688139335188e-5  \\
+            528.0  1.430553722977125e-5  \\
+            560.0  9.244002209081273e-6  \\
+            592.0  5.606447391153358e-6  \\
+            624.0  3.9481013497865015e-6  \\
+            656.0  2.431108655862191e-6  \\
+            688.0  1.5183133155909781e-6  \\
+            720.0  9.115398820039836e-7  \\
+            752.0  4.755045167558314e-7  \\
+            784.0  2.614873495862954e-7  \\
+            816.0  1.6613057541253801e-7  \\
+            848.0  1.000672419548208e-7  \\
+            880.0  6.074565183124354e-8  \\
+            912.0  3.697580389666887e-8  \\
+            944.0  2.0498989930811587e-8  \\
+            976.0  1.1293950295985574e-8  \\
+            1008.0  5.9413867237076756e-9  \\
+            1040.0  3.242124444268822e-9  \\
+        }
+        ;
+    \addlegendentry {H1RCG}
+    \addplot[color={rgb,1:red,0.2422;green,0.6433;blue,0.3044}, name path={259}, draw opacity={1.0}, line width={1}, solid]
+        table[row sep={\\}]
+        {
+            \\
+            152.75  0.042467592547717196  \\
+            208.75  0.023809722616115702  \\
+            315.0  0.0012492558066281908  \\
+            372.0  0.0007208828168086394  \\
+            428.0  0.000401234616694937  \\
+            560.5  8.990821270412208e-6  \\
+            616.5  4.3478378333515174e-6  \\
+            672.5  5.515612808847628e-6  \\
+            752.5  1.749321742173258e-6  \\
+            824.25  4.852377643844625e-7  \\
+            927.25  3.375786239014727e-8  \\
+            983.25  2.1441127155646388e-8  \\
+            1039.25  1.0351572869663854e-8  \\
+            1113.75  5.4335540036317035e-9  \\
+            1185.25  1.8468736859363226e-9  \\
+        }
+        ;
+    \addlegendentry {SCF}
+    \addplot[color={rgb,1:red,0.7644;green,0.4441;blue,0.8243}, name path={260}, draw opacity={1.0}, line width={1}, solid]
+        table[row sep={\\}]
+        {
+            \\
+            64.0  0.061184090420079856  \\
+            96.0  0.04037101259417373  \\
+            128.0  0.017202819168349405  \\
+            160.0  0.011074474483556182  \\
+            192.0  0.006588684091628806  \\
+            240.0  0.004024375472573557  \\
+            272.0  0.0022247171016043085  \\
+            304.0  0.0013601026970869574  \\
+            336.0  0.0007776729780686921  \\
+            368.0  0.00043197797936591096  \\
+            400.0  0.00026086698331461984  \\
+            432.0  0.00015423370920493467  \\
+            464.0  9.857613804124796e-5  \\
+            496.0  5.675186980426209e-5  \\
+            528.0  3.3179328404109295e-5  \\
+            576.0  2.0458081472373366e-5  \\
+            608.0  1.2302066519686662e-5  \\
+            640.0  7.567915260215469e-6  \\
+            672.0  4.66372407389404e-6  \\
+            720.0  2.9066694495053416e-6  \\
+            768.0  1.8032101405032554e-6  \\
+            816.0  1.141358020063567e-6  \\
+            848.0  7.144612190195449e-7  \\
+            896.0  4.542717881502955e-7  \\
+            928.0  2.5893616467641205e-7  \\
+            960.0  1.5647145002024199e-7  \\
+            992.0  9.142144217228445e-8  \\
+            1024.0  5.0197633645879427e-8  \\
+            1056.0  2.819208274148355e-8  \\
+            1088.0  1.527771578494179e-8  \\
+            1120.0  8.569546777575978e-9  \\
+            1152.0  4.648901690045471e-9  \\
+        }
+        ;
+    \addlegendentry {DCM}
+\end{axis}
+\end{tikzpicture}
