@@ -1,4 +1,4 @@
-The parallel Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem. Implemented using DFTK.jl. 
+The Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem, Implemented using DFTK.jl. 
 
 # Getting started
 
