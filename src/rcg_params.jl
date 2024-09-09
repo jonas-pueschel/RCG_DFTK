@@ -138,7 +138,11 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
 
     X = solve_H(ea_grad.krylov_solver, H, res, Σ, ψ, Hψ, ea_grad.itmax, inner_tols, ea_grad.Pks, ea_grad.h_solver)
 
-    return [ψ[ik] - (ψ[ik] -X[ik]) /(I + ψ[ik]'X[ik]) for ik = 1:Nk]
+    #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
+    
+    # Approximate but numerically stable formula
+    G2 = [X[ik] /(I + ψ[ik]'X[ik]) - ψ[ik] * ψ[ik]'X[ik] for ik = 1:Nk]
+    return G2
 end
 
 abstract type AbstractRetraction end 
