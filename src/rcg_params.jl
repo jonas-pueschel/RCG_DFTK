@@ -141,7 +141,7 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
     
     # Approximate but numerically stable formula
-    G2 = [X[ik] /(I + ψ[ik]'X[ik]) - ψ[ik] * ψ[ik]'X[ik] for ik = 1:Nk]
+    G2 = [X[ik] /(I - ψ[ik]'X[ik]) - ψ[ik] * ψ[ik]'X[ik] for ik = 1:Nk]
     return G2
 end
 
