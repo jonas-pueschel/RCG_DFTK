@@ -35,7 +35,7 @@ shift = CorrectedRelativeΛShift(; μ = 0.01)
 gradient = EAGradient(basis, shift; 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = LocalOptimalHSolver(basis, GalerkinInnerSolver;
+        h_solver = NestedHSolver(basis, GalerkinInnerSolver;
                 is_converged_InnerSolver = is_converged_res),
         krylov_solver = Krylov.cg,
         Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
@@ -63,7 +63,7 @@ shift = CorrectedRelativeΛShift()
 gradient = EAGradient(basis, shift; 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = LocalOptimalHSolver(basis, GalerkinInnerSolver;
+        h_solver = NestedHSolver(basis, GalerkinInnerSolver;
                 is_converged_InnerSolver = is_converged_res),
         krylov_solver = Krylov.minres,
         Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
