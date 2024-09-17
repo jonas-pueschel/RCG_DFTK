@@ -56,34 +56,34 @@ function solve_preconditioned_least_squares(krylov_solver, HΦ, Φ, bk, Pk, Σk,
     return unpack(x)
 end
 
-abstract type LocalOptimalInnerSolver end
+abstract type NestedInnerSolver end
 
-mutable struct GalerkinLOIS <: LocalOptimalInnerSolver 
+mutable struct GalerkinInnerSolver <: NestedInnerSolver 
     A
     Prec
     Φ
     HΦ
     shift
-    function GalerkinLOIS()
+    function GalerkinInnerSolver()
         return new(nothing, nothing, nothing, nothing, 0.0)
     end
-    function GalerkinLOIS(A, Prec, Φ, HΦ, shift)
+    function GalerkinInnerSolver(A, Prec, Φ, HΦ, shift)
         return new(A, Prec, Φ, HΦ, shift)
     end
 end
 
-function copy_LOIS(lois::GalerkinLOIS)
-    return GalerkinLOIS(lois.A, lois.Prec, lois.Φ, lois.HΦ, lois.shift == 0.0 ? nothing : lois.shift)
+function copy_InnerSolver(InnerSolver::GalerkinInnerSolver)
+    return GalerkinInnerSolver(InnerSolver.A, InnerSolver.Prec, InnerSolver.Φ, InnerSolver.HΦ, InnerSolver.shift == 0.0 ? nothing : InnerSolver.shift)
 end
 
 
-DFTK.@timing function solve_LOIS(bk, ξ0, Σk, lois::GalerkinLOIS)
+DFTK.@timing function solve_InnerSolver(bk, ξ0, Σk, InnerSolver::GalerkinInnerSolver)
     T = Base.Float64
 
     shift = 0.0
-    if (!isnothing(lois.shift))
+    if (!isnothing(InnerSolver.shift))
         #remedy aufbau principle
-        shift =  lois.shift + eigmin(0.5 * (lois.A + lois.A'))
+        shift =  InnerSolver.shift + eigmin(0.5 * (InnerSolver.A + InnerSolver.A'))
         shift = shift < 0 ? - 1.1 * shift : 0.0
     end
 
@@ -91,8 +91,8 @@ DFTK.@timing function solve_LOIS(bk, ξ0, Σk, lois::GalerkinLOIS)
     #     println(shift)
     # end
 
-    rhs = lois.Φ'bk
-    x0 = lois.Φ'ξ0
+    rhs = InnerSolver.Φ'bk
+    x0 = InnerSolver.Φ'ξ0
 
 
     norm_rhs = norm(rhs)
@@ -107,14 +107,14 @@ DFTK.@timing function solve_LOIS(bk, ξ0, Σk, lois::GalerkinLOIS)
 
     function apply_H(x)
         Y = unpack(x)
-        return pack(lois.A * Y +  Y * Σk + Y * shift)
+        return pack(InnerSolver.A * Y +  Y * Σk + Y * shift)
     end
 
     J = LinearMap{T}(apply_H, size(rhs0, 1))
 
     function apply_Prec(x)
         Y = unpack(x)
-        return pack(lois.Prec * Y)
+        return pack(InnerSolver.Prec * Y)
     end
     M = LinearMap{T}(apply_Prec, size(rhs0, 1))
 
@@ -124,16 +124,16 @@ DFTK.@timing function solve_LOIS(bk, ξ0, Σk, lois::GalerkinLOIS)
     #end
     x *= norm_rhs
 
-    return lois.Φ * unpack(x)
+    return InnerSolver.Φ * unpack(x)
 end
 
-# DFTK.@timing function solve_LOIS(bk, ξ0, Σk, lois::GalerkinLOIS)
+# DFTK.@timing function solve_InnerSolver(bk, ξ0, Σk, InnerSolver::GalerkinInnerSolver)
 #     T = Base.Float64
 
 #     shift = 0.0
-#     if (!isnothing(lois.shift))
+#     if (!isnothing(InnerSolver.shift))
 #         #remedy aufbau principle
-#         shift =  lois.shift + eigmin(0.5 * (lois.A + lois.A'))
+#         shift =  InnerSolver.shift + eigmin(0.5 * (InnerSolver.A + InnerSolver.A'))
 #         shift = shift < 0 ? - 1.1 * shift : 0.0
 #     end
 
@@ -141,8 +141,8 @@ end
 #     #     println(shift)
 #     # end
 
-#     rhs = lois.Φ'bk
-#     x0 = lois.Φ'ξ0
+#     rhs = InnerSolver.Φ'bk
+#     x0 = InnerSolver.Φ'ξ0
 
 #     m,p = size(rhs)
 
@@ -153,106 +153,106 @@ end
 #     Y = zeros(ComplexF64, m,p)
 
 #     for l = 1:p
-#         Y[:,l] = (lois.A + I(m) * σs[l])\R[:,l]
+#         Y[:,l] = (InnerSolver.A + I(m) * σs[l])\R[:,l]
 #     end
 #     #println(size(Y))
 
 #     X = Y * U'
-#     return lois.Φ * X
+#     return InnerSolver.Φ * X
 # end
 
-DFTK.@timing function update_LOIS(Y, HY, Pk, lois::GalerkinLOIS)
-    add = Y - lois.Φ * (lois.Φ'Y);
+DFTK.@timing function update_InnerSolver(Y, HY, Pk, InnerSolver::GalerkinInnerSolver)
+    add = Y - InnerSolver.Φ * (InnerSolver.Φ'Y);
     #only choose vectors sufficiently far away from Φ (if these values are small, condition of R is large)
     idxs = [i for i = 1:size(Y)[2] if norm(add[:,i])/norm(Y[:,i]) > 1e-4]
     add = add[:, idxs]
 
     add, R = ortho_qr(add);
 
-    Hadd = HY[:, idxs] - lois.HΦ * (lois.Φ'Y[:, idxs])
+    Hadd = HY[:, idxs] - InnerSolver.HΦ * (InnerSolver.Φ'Y[:, idxs])
     Hadd = Hadd /R
 
-    A12 = lois.Φ'Hadd
+    A12 = InnerSolver.Φ'Hadd
     A21 = A12'
     A22 = add'Hadd
     A22 = 0.5 * (A22 + A22')
-    lois.A = vcat(hcat(lois.A  , A12),
+    InnerSolver.A = vcat(hcat(InnerSolver.A  , A12),
             hcat(A21, A22))
     Padd = Pk \ add
-    P12 = lois.Φ'Padd
+    P12 = InnerSolver.Φ'Padd
     P21 = P12'
     P22 = add'Padd
     P22 = 0.5 * (P22 + P22')
-    lois.Prec = vcat(hcat(lois.Prec, P12),
+    InnerSolver.Prec = vcat(hcat(InnerSolver.Prec, P12),
                 hcat(P21 , P22))
 
-    lois.Φ = hcat(lois.Φ, add)
-    lois.HΦ = hcat(lois.HΦ, Hadd)
-    #lois.PΦ = hcat(lois.PΦ, Padd)
+    InnerSolver.Φ = hcat(InnerSolver.Φ, add)
+    InnerSolver.HΦ = hcat(InnerSolver.HΦ, Hadd)
+    #InnerSolver.PΦ = hcat(InnerSolver.PΦ, Padd)
 
-    if (!isnothing(lois.shift))
-        lois.shift = eigmin(lois.A)
+    if (!isnothing(InnerSolver.shift))
+        InnerSolver.shift = eigmin(InnerSolver.A)
     end
 end
 
-DFTK.@timing function init_LOIS(ψk, Hψk, Σk, Pk, lois::GalerkinLOIS)
-    lois.Φ = ψk
-    lois.HΦ = Hψk 
+DFTK.@timing function init_InnerSolver(ψk, Hψk, Σk, Pk, InnerSolver::GalerkinInnerSolver)
+    InnerSolver.Φ = ψk
+    InnerSolver.HΦ = Hψk 
     A = ψk'Hψk
-    lois.A = 0.5 * (A' + A) 
+    InnerSolver.A = 0.5 * (A' + A) 
 
     #make A + shift spd in vertical space (does not affect riemannian gradient but improves condition greatly!)
     m = size(ψk)[2]
     evs = real(eigen(Σk * I(m)).values)
     sσ = (max(evs..., 0) + max((-evs)..., 0) )
 
-    #lois.A = (1.0 + sσ) * I(m)
-    lois.A[1:m, 1:m] += 10 * I(m) * sσ
+    #InnerSolver.A = (1.0 + sσ) * I(m)
+    InnerSolver.A[1:m, 1:m] += 10 * I(m) * sσ
     PΦ = Pk \ ψk
     Prec = ψk'PΦ
-    lois.Prec = 0.5 * (Prec' + Prec)
+    InnerSolver.Prec = 0.5 * (Prec' + Prec)
 end
 
-function is_converged_ΔΦx(Φx, Φx_old, Σk, b, lois, tol)
+function is_converged_ΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
     return norm(Φx_old - Φx) < tol
 end
 
-function is_converged_HΔΦx(Φx, Φx_old, Σk, b, lois, tol)
+function is_converged_HΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
     ΦΔx = Φx_old - Φx
-    Δx = (lois.Φ' * ΦΔx) 
-    HΦΔx = lois.HΦ * Δx + ΦΔx * Σk
+    Δx = (InnerSolver.Φ' * ΦΔx) 
+    HΦΔx = InnerSolver.HΦ * Δx + ΦΔx * Σk
     return norm(HΦΔx) < tol
 end
 
-function is_converged_res(Φx, Φx_old, Σk, b, lois, tol)
-    HΦx = lois.HΦ * (lois.Φ' * Φx) + Φx * Σk
+function is_converged_res(Φx, Φx_old, Σk, b, InnerSolver, tol)
+    HΦx = InnerSolver.HΦ * (InnerSolver.Φ' * Φx) + Φx * Σk
     return norm(HΦx - b) < tol
 end
 
-mutable struct LocalOptimalHSolver <: AbstractHSolver 
+mutable struct NestedHSolver <: AbstractHSolver 
     Pks_inner
-    lois_ks
-    is_converged_lois
+    InnerSolver_ks
+    is_converged_InnerSolver
     calculate_Φx0::Bool
     it::Int64
-    function LocalOptimalHSolver(basis::PlaneWaveBasis{T}, lois_type::DataType; is_converged_lois = is_converged_ΔΦx, calculate_Φx0 = true) where {T}
+    function NestedHSolver(basis::PlaneWaveBasis{T}, InnerSolver_type::DataType; is_converged_InnerSolver = is_converged_ΔΦx, calculate_Φx0 = true) where {T}
         Pks_inner = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-        lois_ks = [lois_type() for kpt in basis.kpoints]
-        new(Pks_inner, lois_ks, is_converged_lois, calculate_Φx0, 0)
+        InnerSolver_ks = [InnerSolver_type() for kpt in basis.kpoints]
+        new(Pks_inner, InnerSolver_ks, is_converged_InnerSolver, calculate_Φx0, 0)
     end
 end
 
-function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer, sol::LocalOptimalHSolver)
+function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer, sol::NestedHSolver)
     sol.it += 1
     Nk = size(ψ)[1]
     T = Base.Float64
 
     result = []
-    for (ik, bk, ψk, Hψk, Σk, Pk_inner, Pk_outer, lois) = zip(1:Nk, b, ψ, Hψ, Σ, sol.Pks_inner, Pks_outer, sol.lois_ks)
+    for (ik, bk, ψk, Hψk, Σk, Pk_inner, Pk_outer, InnerSolver) = zip(1:Nk, b, ψ, Hψ, Σ, sol.Pks_inner, Pks_outer, sol.InnerSolver_ks)
         Φx0 = nothing
         if  (sol.it > 1 && sol.calculate_Φx0)
             ξ0 = bk * 0.0
-            Φx0 = solve_LOIS(bk, ξ0, Σk, lois)
+            Φx0 = solve_InnerSolver(bk, ξ0, Σk, InnerSolver)
             Φx0 = norm(Φx0) == 0 ? nothing : Φx0
         end
 
@@ -260,7 +260,7 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
         unpack(x) = unpack_general(x, n_rows, n_cols)
 
         #initialize
-        init_LOIS(ψk, Hψk, Σk, Pk_inner, lois)
+        init_InnerSolver(ψk, Hψk, Σk, Pk_inner, InnerSolver)
 
         rhs = pack(bk)
         Φx = bk * 0.0
@@ -269,7 +269,7 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
         function apply_H(x)
             Y = unpack(x)
             HY = H[ik] * Y
-            update_LOIS(Y, HY, Pk_inner, lois)
+            update_InnerSolver(Y, HY, Pk_inner, InnerSolver)
             return pack(HY + Y * Σk)
         end
     
@@ -286,9 +286,9 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
 
             ξ0 = unpack(solver.x)
             Φx_old = Φx
-            Φx = solve_LOIS(bk, ξ0, Σk, lois)
+            Φx = solve_InnerSolver(bk, ξ0, Σk, InnerSolver)
 
-            return sol.is_converged_lois(Φx, Φx_old, Σk, bk, lois, inner_tols[ik])     
+            return sol.is_converged_InnerSolver(Φx, Φx_old, Σk, bk, InnerSolver, inner_tols[ik])     
         end
 
         if (!isnothing(Φx0))
@@ -297,8 +297,8 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
             krylov_solver(J, rhs; M, itmax, atol = inner_tols[ik], rtol = 1e-16, callback = postprocess)
         end
 
-        if (Pk_outer isa PreconditionerLOIS)
-            update_PreconditionerLOIS!(Pk_outer, lois)
+        if (Pk_outer isa PreconditionerInnerSolver)
+            update_PreconditionerInnerSolver!(Pk_outer, InnerSolver)
             Pk_outer.Σk = Σk
         end
 
@@ -344,59 +344,59 @@ function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, ::Nai
     return res 
 end
 
-mutable struct PreconditionerLOIS{T <: Real}
-    lois_history
+mutable struct PreconditionerInnerSolver{T <: Real}
+    InnerSolver_history
     memory::Int64
     Σk
     Pk
 end
 
-function PreconditionerLOIS(basis::PlaneWaveBasis{T}, kpt::Kpoint, memory::Int64) where {T}
+function PreconditionerInnerSolver(basis::PlaneWaveBasis{T}, kpt::Kpoint, memory::Int64) where {T}
     Pk = DFTK.PreconditionerTPA(basis, kpt) 
-    PreconditionerLOIS{T}([], memory, nothing, Pk)
+    PreconditionerInnerSolver{T}([], memory, nothing, Pk)
 end
 
 
-@views function ldiv!(Y, P::PreconditionerLOIS, R)
+@views function ldiv!(Y, P::PreconditionerInnerSolver, R)
     Y0 = Y
     Y1 = copy(Y)
     Y = zeros(size(Y1))
-    for lois = P.lois_history
-        Y2 = lois.Φ * (lois.Φ'Y1)
+    for InnerSolver = P.InnerSolver_history
+        Y2 = InnerSolver.Φ * (InnerSolver.Φ'Y1)
         Y1 -= Y2
         ξ0 = 0.0 * Y
-        Y += solve_LOIS(Y2, ξ0, P.Σk, lois)
+        Y += solve_InnerSolver(Y2, ξ0, P.Σk, InnerSolver)
     end 
     Y += P.Pk \ Y1
     
     if (real(dot(Y0, Y)) < 0)
         #Failsafe
-        P.lois_history = []
+        P.InnerSolver_history = []
         Y = P.Pk \ Y0
     end
     Y
 end
-ldiv!(P::PreconditionerLOIS, R) = ldiv!(R, P, R)
-(Base.:\)(P::PreconditionerLOIS, R) = ldiv!(P, copy(R))
+ldiv!(P::PreconditionerInnerSolver, R) = ldiv!(R, P, R)
+(Base.:\)(P::PreconditionerInnerSolver, R) = ldiv!(P, copy(R))
 
 # These are needed by eg direct minimization with CG
-@views function mul!(Y, P::PreconditionerLOIS, R)
+@views function mul!(Y, P::PreconditionerInnerSolver, R)
     #TODO
     Y = P.Pk * Y
 
     Y
 end
-(Base.:*)(P::PreconditionerLOIS, R) = mul!(copy(R), P, R)
+(Base.:*)(P::PreconditionerInnerSolver, R) = mul!(copy(R), P, R)
 
-function update_PreconditionerLOIS!(P::PreconditionerLOIS{T}, lois) where {T}
-    lois_copy = copy_LOIS(lois)
-    pushfirst!(P.lois_history, lois_copy)
-    if (length(P.lois_history) > P.memory)
-        pop!(P.lois_history)
+function update_PreconditionerInnerSolver!(P::PreconditionerInnerSolver{T}, InnerSolver) where {T}
+    InnerSolver_copy = copy_InnerSolver(InnerSolver)
+    pushfirst!(P.InnerSolver_history, InnerSolver_copy)
+    if (length(P.InnerSolver_history) > P.memory)
+        pop!(P.InnerSolver_history)
     end
 end
 
-function DFTK.precondprep!(P::PreconditionerLOIS, X::AbstractArray)
+function DFTK.precondprep!(P::PreconditionerInnerSolver, X::AbstractArray)
     DFTK.precondprep!(P.Pk, X)
 end
-DFTK.precondprep!(P::PreconditionerLOIS, ::Nothing) = 1
+DFTK.precondprep!(P::PreconditionerInnerSolver, ::Nothing) = 1

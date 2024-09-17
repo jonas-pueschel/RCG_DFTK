@@ -39,10 +39,10 @@ methods_rcg = Dict([
             gradient = EAGradient(basis, CorrectedRelativeΛShift(; μ = 0.01); 
             rtol = 2.5e-2,
             itmax = 10,
-            h_solver = LocalOptimalHSolver(basis, GalerkinLOIS;
-                    is_converged_lois = is_converged_res),
+            h_solver = LocalOptimalHSolver(basis, GalerkinInnerSolver;
+                    is_converged_InnerSolver = is_converged_res),
             krylov_solver = Krylov.cg,
-            Pks = [PreconditionerLOIS(basis, kpt, 1) for kpt in basis.kpoints]
+            Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
         ),
         backtracking = AdaptiveBacktracking(
             WolfeHZRule(0.05, 0.1, 0.5),

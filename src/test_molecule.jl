@@ -16,10 +16,8 @@ include("./rcg_benchmarking.jl")
 
 model, basis = graphene_setup();
 
-
-
 # Convergence we desire in the residual
-tol = 1e-8;
+tol = 1e-13;
 
 
 #Initial value
@@ -37,10 +35,10 @@ shift = CorrectedRelativeΛShift(; μ = 0.01)
 gradient = EAGradient(basis, shift; 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = LocalOptimalHSolver(basis, GalerkinLOIS;
-                is_converged_lois = is_converged_res),
+        h_solver = LocalOptimalHSolver(basis, GalerkinInnerSolver;
+                is_converged_InnerSolver = is_converged_res),
         krylov_solver = Krylov.cg,
-        Pks = [PreconditionerLOIS(basis, kpt, 1) for kpt in basis.kpoints]
+        Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
         ) 
 
 backtracking = AdaptiveBacktracking(
@@ -65,10 +63,10 @@ shift = CorrectedRelativeΛShift()
 gradient = EAGradient(basis, shift; 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = LocalOptimalHSolver(basis, GalerkinLOIS;
-                is_converged_lois = is_converged_res),
+        h_solver = LocalOptimalHSolver(basis, GalerkinInnerSolver;
+                is_converged_InnerSolver = is_converged_res),
         krylov_solver = Krylov.minres,
-        Pks = [PreconditionerLOIS(basis, kpt, 1) for kpt in basis.kpoints]
+        Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
         ) 
 stepsize = BarzilaiBorweinStep(0.1, 2.5, 1.0);
 backtracking = StandardBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), stepsize, 10)

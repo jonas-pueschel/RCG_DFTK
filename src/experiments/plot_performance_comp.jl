@@ -41,6 +41,7 @@ i_run = Int(round(rand() * 20) + 1)
 
 println(i_run)
 
+#initial residual, not saved by the experiment
 initval = 0.18141271102731157 / 1.5
 
 for method_name = methods

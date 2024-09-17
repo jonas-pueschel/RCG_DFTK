@@ -2,7 +2,7 @@ using Krylov
 using DFTK
 
 include("./lyap_solvers.jl")
-include("./local_optimal_solvers.jl")
+include("./inner_solvers.jl")
 
 abstract type AbstractGradient end 
 
@@ -66,10 +66,10 @@ function default_EA_gradient(basis)
     return EAGradient(basis, shift; 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = LocalOptimalHSolver(basis, ProjectedSystemLOIS),
+        h_solver = NestedHSolver(basis, ProjectedSystemInnerSolver),
         krylov_solver = Krylov.minres,
         #Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-        Pks = [PreconditionerLOIS(basis, kpt, 1) for kpt in basis.kpoints]
+        Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
         ) 
 end
 
@@ -141,7 +141,8 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
     
     # Approximate but numerically stable formula
-    G2 = [X[ik] /(I - ψ[ik]'X[ik]) - ψ[ik] * ψ[ik]'X[ik] for ik = 1:Nk]
+    Mtx = [ψ[ik]'X[ik] for ik = 1:Nk]
+    G2 = [X[ik] /(I - Mtx[ik]) - ψ[ik] * Mtx[ik] for ik = 1:Nk]
     return G2
 end
 
