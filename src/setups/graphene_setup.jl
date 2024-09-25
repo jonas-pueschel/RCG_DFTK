@@ -1,5 +1,4 @@
-function  graphene_setup(;Ecut = 15, kgrid = [6, 6, 1], a = 4.66, L = 20  )
-    # height of the simulation box
+function  graphene_setup(;Ecut = 15, kgrid = [6, 6, 1], a = 4.66, L = 20, supercell_size = [1,1,1])
 
     # Define the geometry and pseudopotential
     # lattice constant
@@ -12,6 +11,10 @@ function  graphene_setup(;Ecut = 15, kgrid = [6, 6, 1], a = 4.66, L = 20  )
     positions = [C1, C2]
     C = ElementPsp(:C; psp=load_psp("hgh/pbe/c-q4"))
     atoms = [C, C]
+
+    if (prod(supercell_size) != 1)
+        lattice, atoms, positions = create_supercell(lattice, atoms, positions, supercell_size)
+    end
 
     # Run SCF
     model = model_PBE(lattice, atoms, positions)

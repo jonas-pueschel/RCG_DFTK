@@ -1,4 +1,4 @@
-function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2] )
+function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2],  supercell_size = [1,1,1])
     Ti = ElementPsp(:Ti, psp=load_psp("hgh/lda/ti-q4.hgh"))
     O  = ElementPsp(:O, psp=load_psp("hgh/lda/o-q6.hgh"))
     atoms     = [Ti, Ti, O, O, O, O]
@@ -14,6 +14,11 @@ function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2] )
                  [0.0      0.0      5.61098]];
     
     #model = model_PBE(lattice, atoms, positions)
+    
+    if (prod(supercell_size) != 1)
+        lattice, atoms, positions = create_supercell(lattice, atoms, positions, supercell_size)
+    end
+
     model = model_LDA(lattice, atoms, positions)
      # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4

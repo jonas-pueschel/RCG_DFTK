@@ -1,4 +1,4 @@
-function GaAs_setup(;Ecut = 25, a = 10.68290949909, kgrid = [2, 2, 2] )
+function GaAs_setup(;Ecut = 25, a = 10.68290949909, kgrid = [2, 2, 2], supercell_size = [1,1,1])
      # GaAs lattice constant in Bohr
     lattice = a / 2 * [[0 1 1.];
                        [1 0 1.];
@@ -10,6 +10,9 @@ function GaAs_setup(;Ecut = 25, a = 10.68290949909, kgrid = [2, 2, 2] )
     positions = [ones(3)/8 #+ [0.24, -0.33, 0.12] / 15
                     , -ones(3)/8]
     
+    if (prod(supercell_size) != 1)
+        lattice, atoms, positions = create_supercell(lattice, atoms, positions, supercell_size)
+    end
     model = model_LDA(lattice, atoms, positions)
     #model = model_PBE(lattice, atoms, positions)
     # k-point grid (Regular Monkhorst-Pack grid)
