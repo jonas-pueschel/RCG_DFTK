@@ -53,7 +53,7 @@ mutable struct EAGradient <: AbstractGradient
     const h_solver::AbstractHSolver   #type of solver for H 
     Hinv_ψ
 
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, rtol = 1e-2, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = NaiveHSolver(), Pks = nothing) where {T}
+    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, rtol = 1e-2, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = NestedHSolver(basis, ProjectedSystemInnerSolver), Pks = nothing) where {T}
         if isnothing(Pks)
             Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         end
@@ -62,15 +62,13 @@ mutable struct EAGradient <: AbstractGradient
 end
 
 function default_EA_gradient(basis)
-    shift = CorrectedRelativeΛShift(; μ = 0.01)
-    return EAGradient(basis, shift; 
+    return EAGradient(basis, CorrectedRelativeΛShift(); 
         rtol = 2.5e-2,
         itmax = 10,
-        h_solver = NestedHSolver(basis, ProjectedSystemInnerSolver),
+        h_solver = LocalOptimalHSolver(),
         krylov_solver = Krylov.minres,
-        #Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-        Pks = [PreconditionerInnerSolver(basis, kpt, 1) for kpt in basis.kpoints]
-        ) 
+        Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
+    ) 
 end
 
 
@@ -83,7 +81,7 @@ end
 function get_constant_shift(Σ::AbstractArray, Nk)
     return [Σ[ik] for ik = 1:Nk]
 end
-function calculate_shift(ψ, Hψ, H, Λ, res, shift::ConstantShift)
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::ConstantShift)
     Nk = size(ψ)[1]
     return get_constant_shift(shift.Σ, Nk)
 end
@@ -91,10 +89,10 @@ end
 struct RelativeEigsShift <: AbstractShiftStrategy
     μ::Float64
 end
-function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
     Nk = size(ψ)[1] 
     λ_min = [min(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
-    return [- λ_min[ik] * shift.μ for ik = 1:Nk]
+    return [- λ_min[ik] * shift.μ * I for ik = 1:Nk]
 end
 
 #TODO: Save SVD for prec?
@@ -107,7 +105,7 @@ mutable struct CorrectedRelativeΛShift <: AbstractShiftStrategy
     end
 end
 
-function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift)
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift)
     #correcting
     Nk = size(ψ)[1] 
     Σ = []
@@ -125,6 +123,56 @@ function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift)
     return Σ
 end
 
+mutable struct CorrectedRelativeΛShift2 <: AbstractShiftStrategy   
+    μ
+    recalculate_μ::Bool
+    function CorrectedRelativeΛShift2(;μ = nothing)
+        recalculate_μ = isnothing(μ)
+        return new(μ, recalculate_μ)
+    end
+end
+
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift2)
+    #correcting
+    Nk = size(ψ)[1] 
+    Σ = []
+    if (shift.recalculate_μ)
+        shift.μ = min(norm(res), 1.0)
+    end
+
+    for ik = 1:Nk
+        push!(Σ, - Λ[ik] + shift.μ * I)
+    end
+    #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
+    return Σ
+end
+
+
+struct AdaptiveShift <: AbstractShiftStrategy end
+
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, ::AdaptiveShift)
+    #correcting
+    Nk = size(ψ)[1] 
+    p = size(Λ[1])[1]
+    Σ = []
+
+    μ = min(norm(res), 1.0)
+
+    println(μ)
+
+    Σ = [ - (1 - μ) * Λ[ik] - I(p) * (tr(Λ[ik])/p) for ik = 1:Nk]
+
+    #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
+    return Σ
+end
+ 
+struct AvgShift <: AbstractShiftStrategy end
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, ::AvgShift)
+    Nk = size(ψ)[1] 
+    p = size(Λ[1])[1]
+    return [- I(p) * (tr(Λ[ik])/p) for ik = 1:Nk]
+end
+
 function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     Nk = size(ψ)[1];
     Σ = calculate_shift(ψ, Hψ, H, Λ, res, ea_grad.shift);
@@ -133,10 +181,8 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
        DFTK.precondprep!(ea_grad.Pks[ik], ψ[ik]); 
     end
 
-    inner_tols = [min(max(ea_grad.rtol * norm(res[ik]), ea_grad.atol), 1.0) for ik = 1:Nk]
 
-
-    X = solve_H(ea_grad.krylov_solver, H, res, Σ, ψ, Hψ, ea_grad.itmax, inner_tols, ea_grad.Pks, ea_grad.h_solver)
+    X = solve_H(ea_grad.krylov_solver, H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.rtol, ea_grad.Pks, ea_grad.h_solver)
 
     #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
     
@@ -152,7 +198,8 @@ abstract type AbstractRetraction end
     R = nothing
 end
 
-function ortho_qr(φk::ArrayType) where {ArrayType <: AbstractArray}
+
+DFTK.@timing function ortho_qr(φk::ArrayType) where {ArrayType <: AbstractArray}
     Nn, Nk = size(φk)
     temp = qr(φk)
     Q = convert(ArrayType, temp.Q)[1:Nn, 1:Nk]
@@ -162,7 +209,7 @@ end
 
 
 #DFTK.@timing 
-function calculate_retraction(ψ, η, τ, ret_qr::RetractionQR)
+DFTK.@timing function calculate_retraction(ψ, η, τ, ret_qr::RetractionQR)
     Nk = size(ψ)[1]
     Q = []
     R = []
@@ -183,7 +230,7 @@ end
     Sfinv = nothing
 end
 #DFTK.@timing 
-function calculate_retraction(ψ, η, τ, ret_pol::RetractionPolar)
+DFTK.@timing function calculate_retraction(ψ, η, τ, ret_pol::RetractionPolar)
     Nk = size(ψ)[1]
     Q = []
     Sf = []
@@ -212,8 +259,8 @@ abstract type AbstractTransport end
 default_transport() = DifferentiatedRetractionTransport()
 
 struct DifferentiatedRetractionTransport <: AbstractTransport end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_qr::RetractionQR; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -228,8 +275,7 @@ function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTrans
     end
     return [ ψ[ik] * (skew[ik] - Ge[ik])  + Yrf[ik] for ik = 1:Nk]
 end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_pol::RetractionPolar ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -241,8 +287,8 @@ end
 
 
 struct L2ProjectionTransport <: AbstractTransport end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -254,8 +300,8 @@ end
 struct RiemannianProjectionTransport <: AbstractTransport 
     Pks_Metric
 end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -275,8 +321,8 @@ end
 struct EAProjectionTransport <: AbstractTransport
     ea_grad::EAGradient
 end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ea_proj::EAProjectionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ea_proj::EAProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -288,8 +334,8 @@ function calculate_transport(ψ, ξ, τ, ψ_old, ea_proj::EAProjectionTransport,
 end
 
 struct InverseRetractionTransport <: AbstractTransport end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionQR ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
@@ -299,8 +345,8 @@ function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,
     R_ir = [tsylv2solve(Mtx_lhs[ik]) for ik = 1:Nk]
     return [- ψ_old[ik] * R_ir[ik] + ψ[ik] for ik = 1:Nk]
 end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionPolar ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
@@ -312,8 +358,8 @@ function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,
 end
 
 struct NoTransport <: AbstractTransport end
-#DFTK.@timing 
-function calculate_transport(ψ, ξ, τ, ψ_old, ::NoTransport,  
+
+DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::NoTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     return ξ;
@@ -707,9 +753,9 @@ end
 abstract type AbstractBacktracking end
 
 
-#DFTK.@timing 
+#
 #TODO integrate the transport here
-function do_step(basis, occupation, ψ, η, τ, retraction, transport)
+DFTK.@timing function do_step(basis, occupation, ψ, η, τ, retraction, transport)
     Nk = size(ψ)[1]
 
     ψ_next = calculate_retraction(ψ, η, τ, retraction)
@@ -738,7 +784,7 @@ mutable struct StandardBacktracking <: AbstractBacktracking
     end
 end
 
-function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
+DFTK.@timing function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
     retraction::AbstractRetraction, transport::AbstractTransport, backtracking::StandardBacktracking)
 
     τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, backtracking.stepsize)
@@ -748,6 +794,11 @@ function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occu
     for k = 0:backtracking.maxiter
         if (k != 0)
             τ = backtrack(τ, backtracking.rule)
+            #TODO: this should maybe be solved differently, i.e. by using a pointer 
+            if (isa(backtracking.stepsize, BarzilaiBorweinStep))
+                #τ_old is set when calculated, thus we need to update it when backtracking
+                backtracking.stepsize.τ_old = τ
+            end
         end
         
         next = do_step(basis, occupation, ψ, η, τ, retraction, transport)
@@ -772,8 +823,7 @@ mutable struct AdaptiveBacktracking <: AbstractBacktracking
         return new(rule, stepsize, maxiter, nothing)
     end
 end
-
-function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
+DFTK.@timing function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
     retraction::AbstractRetraction, transport::AbstractTransport, backtracking::AdaptiveBacktracking)
     
     if isnothing(backtracking.τ_old)

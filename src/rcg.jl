@@ -18,9 +18,11 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
                 cg_param = ParamFR_PRP(),
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
-                backtracking = GreedyBacktracking(WolfeSecantRule(0.05, 0.1, 0.5), SecantStep(ExactHessianStep(2.5)), 1, 5)
+                backtracking = AdaptiveBacktracking(
+                    WolfeHZRule(0.05, 0.1, 0.5),
+                    ExactHessianStep(), 10),
                 ) where {T}
-
+    start_ns = time_ns()
     # setting parameters
     model = basis.model
     #@assert iszero(model.temperature)  # temperature is not yet supported
@@ -110,7 +112,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
 
 
         info = (; ham=H, ψ,basis, converged = is_converged(info), stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
-        energies, algorithm="RCG")
+        energies, start_ns, algorithm="RCG")
 
         callback(info)
         # callback and test convergence
@@ -163,7 +165,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     # println(λ_min)
 
     info = (; ham=H, ψ, basis, energies, converged = is_converged(info) , norm_res = norm(res), ρ, eigenvalues, occupation, εF, n_iter,
-            stage=:finalize, algorithm="RCG")
+            stage=:finalize, runtime_ns = time_ns() - start_ns, start_ns,algorithm="RCG", )
     callback(info)
 
     info

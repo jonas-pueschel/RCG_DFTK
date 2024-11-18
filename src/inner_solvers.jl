@@ -65,7 +65,7 @@ mutable struct GalerkinInnerSolver <: NestedInnerSolver
     HΦ
     shift
     function GalerkinInnerSolver()
-        return new(nothing, nothing, nothing, nothing, 0.0)
+        return new(nothing, nothing, nothing, nothing, nothing)
     end
     function GalerkinInnerSolver(A, Prec, Φ, HΦ, shift)
         return new(A, Prec, Φ, HΦ, shift)
@@ -86,10 +86,6 @@ DFTK.@timing function solve_InnerSolver(bk, ξ0, Σk, InnerSolver::GalerkinInner
         shift =  InnerSolver.shift + eigmin(0.5 * (InnerSolver.A + InnerSolver.A'))
         shift = shift < 0 ? - 1.1 * shift : 0.0
     end
-
-    # if (shift != 0)
-    #     println(shift)
-    # end
 
     rhs = InnerSolver.Φ'bk
     x0 = InnerSolver.Φ'ξ0
@@ -213,18 +209,18 @@ DFTK.@timing function init_InnerSolver(ψk, Hψk, Σk, Pk, InnerSolver::Galerkin
     InnerSolver.Prec = 0.5 * (Prec' + Prec)
 end
 
-function is_converged_ΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
+@DFTK.timing function is_converged_ΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
     return norm(Φx_old - Φx) < tol
 end
 
-function is_converged_HΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
+@DFTK.timing function is_converged_HΔΦx(Φx, Φx_old, Σk, b, InnerSolver, tol)
     ΦΔx = Φx_old - Φx
     Δx = (InnerSolver.Φ' * ΦΔx) 
     HΦΔx = InnerSolver.HΦ * Δx + ΦΔx * Σk
     return norm(HΦΔx) < tol
 end
 
-function is_converged_res(Φx, Φx_old, Σk, b, InnerSolver, tol)
+@DFTK.timing function is_converged_res(Φx, Φx_old, Σk, b, InnerSolver, tol)
     HΦx = InnerSolver.HΦ * (InnerSolver.Φ' * Φx) + Φx * Σk
     return norm(HΦx - b) < tol
 end
@@ -242,13 +238,18 @@ mutable struct NestedHSolver <: AbstractHSolver
     end
 end
 
-function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer, sol::NestedHSolver)
+DFTK.@timing function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, sol::NestedHSolver)
     sol.it += 1
     Nk = size(ψ)[1]
     T = Base.Float64
 
     result = []
     for (ik, bk, ψk, Hψk, Σk, Pk_inner, Pk_outer, InnerSolver) = zip(1:Nk, b, ψ, Hψ, Σ, sol.Pks_inner, Pks_outer, sol.InnerSolver_ks)
+        #normalize, makes convergence easier to check
+        kpoint_converged = false
+        norm_rhs = norm(bk)
+        bk = bk / norm_rhs
+        
         Φx0 = nothing
         if  (sol.it > 1 && sol.calculate_Φx0)
             ξ0 = bk * 0.0
@@ -263,10 +264,11 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
         init_InnerSolver(ψk, Hψk, Σk, Pk_inner, InnerSolver)
 
         rhs = pack(bk)
+
         Φx = bk * 0.0
         Φx_old = nothing
 
-        function apply_H(x)
+        @DFTK.timing function apply_H(x)
             Y = unpack(x)
             HY = H[ik] * Y
             update_InnerSolver(Y, HY, Pk_inner, InnerSolver)
@@ -275,7 +277,7 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
     
         J = LinearMap{T}(apply_H, size(rhs, 1))
 
-        function apply_Prec(x)
+        @DFTK.timing function apply_Prec(x)
             Y = unpack(x)
             return pack(Pk_outer \ Y)
         end
@@ -288,29 +290,37 @@ function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, inner_tols, Pks_outer,
             Φx_old = Φx
             Φx = solve_InnerSolver(bk, ξ0, Σk, InnerSolver)
 
-            return sol.is_converged_InnerSolver(Φx, Φx_old, Σk, bk, InnerSolver, inner_tols[ik])     
+            kpoint_converged = sol.is_converged_InnerSolver(Φx, Φx_old, Σk, bk, InnerSolver, tol)    
+            return kpoint_converged
         end
 
         if (!isnothing(Φx0))
-            krylov_solver(J, rhs, pack(Φx0); M, itmax, atol = inner_tols[ik], rtol = 1e-16, callback = postprocess)
+            ~, stats = krylov_solver(J, rhs, pack(Φx0); M, itmax, atol = tol * 1e-2, callback = postprocess)
         else
-            krylov_solver(J, rhs; M, itmax, atol = inner_tols[ik], rtol = 1e-16, callback = postprocess)
+            ~, stats = krylov_solver(J, rhs; M, itmax, atol = tol * 1e-2, callback = postprocess)
         end
+
 
         if (Pk_outer isa PreconditionerInnerSolver)
             update_PreconditionerInnerSolver!(Pk_outer, InnerSolver)
             Pk_outer.Σk = Σk
         end
+    
+        if (!kpoint_converged)
+            @warn "inner solver failed to converge, lower tol or increase inner iter"
+        end
 
-        push!(result, Φx)
+        push!(result, Φx * norm_rhs)
     end
+
+
 
     return result
 end
 
 
 struct NaiveHSolver <: AbstractHSolver end
-function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, ::NaiveHSolver)
+DFTK.@timing function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, tol, Pks, ::NaiveHSolver; ξ0 = nothing)
     Nk = size(ψ)[1]
     T = Base.Float64
 
@@ -321,6 +331,8 @@ function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, ::Nai
         unpack(x) = unpack_general(x, n_rows, n_cols)
 
         rhs = pack(b[ik])
+        norm_rhs = norm(rhs)
+        rhs = rhs / norm_rhs
 
         function apply_H(x)
             Y = unpack(x)
@@ -335,14 +347,24 @@ function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, inner_tols, Pks, ::Nai
         end
         M = LinearMap{T}(apply_Prec, size(rhs, 1))
 
-        sol, stats = krylov_solver(J, rhs; M, itmax, atol = inner_tols[ik], rtol = 1e-16)
 
+        if (isnothing(ξ0))
+            sol, stats = krylov_solver(J, rhs; M, itmax, atol = 1e-16, verbose = 0)
+        else
+            ξ0k = ξ0[ik] / norm_rhs
+            sol, stats = krylov_solver(J, rhs, pack(ξ0k); M, itmax, atol = 1e-32, rtol = 1e-32, verbose = 0)
+        end
 
-        push!(res, unpack(sol))
+        if (!stats.solved)
+            @warn "inner solver failed to converge, lower tol or increase inner iter"
+        end
+
+        push!(res, norm_rhs * unpack(sol))
     end
 
     return res 
 end
+
 
 mutable struct PreconditionerInnerSolver{T <: Real}
     InnerSolver_history
@@ -400,3 +422,214 @@ function DFTK.precondprep!(P::PreconditionerInnerSolver, X::AbstractArray)
     DFTK.precondprep!(P.Pk, X)
 end
 DFTK.precondprep!(P::PreconditionerInnerSolver, ::Nothing) = 1
+
+
+struct LocalOptimalHSolver <: AbstractHSolver end
+
+DFTK.@timing function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
+    Nk = size(ψ)[1]
+    
+    results = Array{Matrix{ComplexF64}}(undef, Nk)
+    
+    #Threads.@threads 
+    for (ik, Hk, bk, ψk, Σk, Pk_outer) = collect(zip(1:Nk, H.blocks, b, ψ, Σ, Pks_outer))
+        result = local_optimal_solve(Hk, bk, Σk, ψk, Pk_outer, itmax, tol)
+        results[ik] = result
+    end
+
+    return results
+end
+
+function build_local_space!(Ξ, HΞ)
+    Q,R = ortho_qr(Ξ)
+    Ξ .= Q
+    HΞ .= HΞ/R
+    H_loc = Ξ'HΞ
+    return H_loc
+end
+
+function solve_local_system(H_loc, Σk, rhs_loc)
+    n_rows, n_cols = size(rhs_loc)
+
+    rhs_loc = pack(rhs_loc)
+    unpack(x_unpack) = unpack_general(x_unpack, n_rows, n_cols)
+
+    apply_H = function (x)
+        Y = unpack(x)
+        return pack(H_loc * Y +  Y * Σk)
+    end
+
+    J = LinearMap{Base.Float64}(apply_H, size(rhs_loc, 1))
+
+
+    x_sol, stats = Krylov.minres(J, rhs_loc; itmax = 100, atol = 1e-8, rtol = 1e-8)
+
+    return unpack(x_sol)
+end
+
+#solves on horizontal space
+function local_optimal_solve(Hk, bk, Σk, ψk, Pk, itmax, tol)
+
+    norm_bk = norm(bk)
+    rhs = bk/norm_bk
+
+    apply_Pk = function (ξk)
+        Pξk = Pk\ξk
+        return Pξk - ψk * (ψk'Pξk)
+    end
+
+    apply_Hk = function (ξk)
+        Hξk = Hk * ξk
+        return Hξk - ψk * (ψk'Hξk)
+    end
+
+
+    ξ = apply_Pk(rhs)
+    Hξ = apply_Hk(ξ)
+    
+    w = apply_Pk(Hξ + ξ * Σk - rhs)
+    Hw = apply_Hk(w)
+
+    Ξ = hcat(ξ, w) 
+    HΞ = hcat(Hξ, Hw)
+    H_loc = build_local_space!(Ξ, HΞ)
+
+    for iter = 1:itmax
+        X = solve_local_system(H_loc, Σk, Ξ'rhs)
+        ξ_old = ξ
+        Hξ_old = Hξ
+        ξ = Ξ * X
+        Hξ = HΞ * X
+        #TODO: difference?
+        #ξ_diff = ξ_new - ξ
+        #Hξ_diff = Hξ_new - Hξ
+        r = Hξ + ξ * Σk - rhs
+        if norm(r) < tol
+            return ξ * norm_bk
+        end
+        w = apply_Pk(r)
+        Hw = apply_Hk(w)
+
+        Ξ = hcat(ξ, w, ξ_old) 
+        HΞ = hcat(Hξ, Hw, Hξ_old)
+        H_loc = build_local_space!(Ξ, HΞ)
+
+
+    end
+    X = solve_local_system(H_loc, Σk, Ξ'rhs)
+    ξ_old = ξ
+    Hξ_old = Hξ
+    ξ = Ξ * X
+    Hξ = HΞ * X
+    #TODO: difference?
+    #ξ_diff = ξ_new - ξ
+    #Hξ_diff = Hξ_new - Hξ
+    r = Hξ + ξ * Σk - rhs
+    if norm(r) >= tol
+        @warn "inner solver failed to converge, lower tol or increase inner iter"
+    end
+    
+    return ξ * norm_bk
+end
+
+
+# struct GlobalOptimalHSolver <: AbstractHSolver end
+
+# DFTK.@timing function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, ::GlobalOptimalHSolver)
+#     Nk = size(ψ)[1]
+    
+#     results = []
+#     for ik = 1:Nk
+#         result = local_optimal_solve(H[ik], b[ik], Σ[ik], ψ[ik], Pks_outer[ik], itmax, tol)
+#         push!(results, result)
+#     end
+#     return results
+# end
+
+# function build_global_space!(Ξ, HΞ)
+#     Q,R = ortho_qr(Ξ)
+#     Ξ .= Q
+#     HΞ .= HΞ/R
+#     H_loc = Ξ'HΞ
+#     return H_loc
+# end
+
+# function solve_global_system(H_loc, Σk, rhs_loc)
+#     n_rows, n_cols = size(rhs_loc)
+
+#     rhs_loc = pack(rhs_loc)
+#     unpack(x) = unpack_general(x, n_rows, n_cols)
+
+#     function apply_H(x)
+#         Y = unpack(x)
+#         return pack(H_loc * Y +  Y * Σk)
+#     end
+
+#     J = LinearMap{Base.Float64}(apply_H, size(rhs_loc, 1))
+
+
+#     x, stats = Krylov.minres(J, rhs_loc; itmax = 100, atol = 1e-8, rtol = 1e-8)
+
+#     return unpack(x)
+# end
+
+# #solves on horizontal space
+# function global_optimal_solve(Hk, bk, Σk, ψk, Pk, itmax, tol)
+#     norm_bk = norm(bk)
+#     rhs = bk/norm_bk
+
+#     function apply_Pk(ξk)
+#         Pξk = Pk\ξk
+#         return Pξk - ψk * (ψk'Pξk)
+#     end
+
+#     function apply_Hk(ξk)
+#         Hξk = Hk * ξk
+#         return Hξk - ψk * (ψk'Hξk)
+#     end
+
+
+#     ξ = apply_Pk(rhs)
+#     Hξ = apply_Hk(ξ)
+#     w = apply_Pk(Hξ + ξ * Σk - rhs)
+#     Hw = apply_Hk(w)
+
+#     Ξ = hcat(ξ, w) 
+#     HΞ = hcat(Hξ, Hw)
+#     H_loc = build_local_space!(Ξ, HΞ)
+
+#     for iter = 1:itmax
+#         X = solve_local_system(H_loc, Σk, Ξ'rhs)
+#         ξ_old = ξ
+#         Hξ_old = Hξ
+#         ξ = Ξ * X
+#         Hξ = HΞ * X
+#         #TODO: difference?
+#         #ξ_diff = ξ_new - ξ
+#         #Hξ_diff = Hξ_new - Hξ
+#         r = Hξ + ξ * Σk - rhs
+#         if norm(r) < tol
+#             return ξ * norm_bk
+#         end
+#         w = apply_Pk(r)
+#         Hw = apply_Hk(w)
+
+#         Ξ = hcat(ξ, w, ξ_old) 
+#         HΞ = hcat(Hξ, Hw, Hξ_old)
+#         H_loc = build_local_space!(Ξ, HΞ)
+#     end
+#     X = solve_local_system(H_loc, Σk, Ξ'rhs)
+#     ξ_old = ξ
+#     Hξ_old = Hξ
+#     ξ = Ξ * X
+#     Hξ = HΞ * X
+#     #TODO: difference?
+#     #ξ_diff = ξ_new - ξ
+#     #Hξ_diff = Hξ_new - Hξ
+#     r = Hξ + ξ * Σk - rhs
+#     if norm(r) >= tol
+#         @warn "inner solver failed to converge, lower tol or increase inner iter"
+#     end
+    
+#     return ξ * norm_bk
+# end
