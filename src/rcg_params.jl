@@ -18,16 +18,16 @@ end
 function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
     Nk = size(ψ)[1]
     Pks = riem_grad.Pks_Metric
-    #for ik = 1:length(Pks)
+    # for ik = 1:length(Pks)
     #    DFTK.precondprep!(Pks[ik], ψ[ik])
-    #end
+    # end
+
     P_ψ = [ Pks[ik] \ ψ[ik] for ik = 1:Nk]
-    P_Hψ = [ Pks[ik] \ Hψ[ik] for ik = 1:Nk]
-    Mtx_lhs = [ψ[ik]'P_ψ[ik] for ik = 1:Nk]
-    Mtx_rhs = 2 * [ψ[ik]'P_Hψ[ik] for ik = 1:Nk]
-    #Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
-    X = [lyap(Mtx_lhs[ik], -Mtx_rhs[ik]) for ik = 1:Nk]
-    g = [P_Hψ[ik] - P_ψ[ik] * X[ik] for ik = 1:Nk]
+    P_r = [ Pks[ik] \ res[ik] for ik = 1:Nk]
+    G1 = [ψ[ik]'P_ψ[ik] for ik = 1:Nk]
+    G2 = [ψ[ik]'P_r[ik] for ik = 1:Nk]
+    X = [G1[ik]\G2[ik] for ik = 1:Nk]
+    g = [P_r[ik] - P_ψ[ik] * X[ik] for ik = 1:Nk]
     return g
 end
 
@@ -119,31 +119,6 @@ DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelat
     return Σ
 end
 
-
-struct AdaptiveShift <: AbstractShiftStrategy end
-
-DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, ::AdaptiveShift)
-    #correcting
-    Nk = size(ψ)[1] 
-    p = size(Λ[1])[1]
-    Σ = []
-
-    μ = min(norm(res), 1.0)
-
-    println(μ)
-
-    Σ = [ - (1 - μ) * Λ[ik] - I(p) * (tr(Λ[ik])/p) for ik = 1:Nk]
-
-    #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
-    return Σ
-end
- 
-struct AvgShift <: AbstractShiftStrategy end
-DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, ::AvgShift)
-    Nk = size(ψ)[1] 
-    p = size(Λ[1])[1]
-    return [- I(p) * (tr(Λ[ik])/p) for ik = 1:Nk]
-end
 
 function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     Nk = size(ψ)[1];
@@ -635,14 +610,14 @@ function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
     if (E_next > E_current + (rule.c_1 * desc_curr_all + 100 * eps(Float64) * abs(E_current)) && rule.c_1 != 0)
         #Armijo condition not satisfied --> reset HZ
         rule.τ_l = nothing
-        rule.τ_r = nothing
+        rule.τ_r = rule.τ_new
         rule.τ_new = rule.δ * next.τ
+        println(rule.τ_new)
         return false
     elseif (abs(desc_next_all) <= rule.c_2 * abs(desc_curr_all))
         #Curvature condition satisfied --> prepare for next iteration
         return true
     end
-
 
     if (isnothing(rule.τ_l))
         rule.τ_l = 0.0 * next.τ
