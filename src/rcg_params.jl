@@ -24,8 +24,8 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
     P_ψ = [ Pks[ik] \ ψ[ik] for ik = 1:Nk]
     P_Hψ = [ Pks[ik] \ Hψ[ik] for ik = 1:Nk]
     Mtx_lhs = [ψ[ik]'P_ψ[ik] for ik = 1:Nk]
-    Mtx_rhs = [ψ[ik]'P_Hψ[ik] for ik = 1:Nk]
-    Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
+    Mtx_rhs = 2 * [ψ[ik]'P_Hψ[ik] for ik = 1:Nk]
+    #Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
     X = [lyap(Mtx_lhs[ik], -Mtx_rhs[ik]) for ik = 1:Nk]
     g = [P_Hψ[ik] - P_ψ[ik] * X[ik] for ik = 1:Nk]
     return g
@@ -92,11 +92,10 @@ end
 DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift)
     Nk = size(ψ)[1] 
     λ_min = [min(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
-    return [- λ_min[ik] * shift.μ * I for ik = 1:Nk]
+    return [λ_min[ik] * shift.μ * I for ik = 1:Nk]
 end
 
-#TODO: Save SVD for prec?
-mutable struct CorrectedRelativeΛShift <: AbstractShiftStrategy 
+mutable struct CorrectedRelativeΛShift <: AbstractShiftStrategy   
     μ
     recalculate_μ::Bool
     function CorrectedRelativeΛShift(;μ = nothing)
@@ -114,34 +113,7 @@ DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelat
     end
 
     for ik = 1:Nk
-        s, U = eigen(Λ[ik]) #TODO cast to real may change eigvals?
-        σ = broadcast(x -> real(x) < 0 ? -( 1 + shift.μ) * real(x) :  - (1 - shift.μ) * real(x) , s)
-        Σk = U * Diagonal(σ) * U'
-        push!(Σ, Σk)
-    end
-    #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
-    return Σ
-end
-
-mutable struct CorrectedRelativeΛShift2 <: AbstractShiftStrategy   
-    μ
-    recalculate_μ::Bool
-    function CorrectedRelativeΛShift2(;μ = nothing)
-        recalculate_μ = isnothing(μ)
-        return new(μ, recalculate_μ)
-    end
-end
-
-DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::CorrectedRelativeΛShift2)
-    #correcting
-    Nk = size(ψ)[1] 
-    Σ = []
-    if (shift.recalculate_μ)
-        shift.μ = min(norm(res), 1.0)
-    end
-
-    for ik = 1:Nk
-        push!(Σ, - Λ[ik] + shift.μ * I)
+        push!(Σ, Λ[ik] - shift.μ * I)
     end
     #return = [ λ_max[ik] < 0 ? (- shift.μ * Λ[ik]) : 0 * Λ[ik] for ik = 1:Nk]
     return Σ
