@@ -612,7 +612,6 @@ function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
         rule.τ_l = nothing
         rule.τ_r = rule.τ_new
         rule.τ_new = rule.δ * next.τ
-        println(rule.τ_new)
         return false
     elseif (abs(desc_next_all) <= rule.c_2 * abs(desc_curr_all))
         #Curvature condition satisfied --> prepare for next iteration
