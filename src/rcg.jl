@@ -111,12 +111,12 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         end
 
 
-        info = (; ham=H, ψ,basis, converged = is_converged(info), stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+        info = (; ham=H, ψ,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
         energies, start_ns, algorithm="RCG")
-
         callback(info)
+
         # callback and test convergence
-        if info.converged
+        if is_converged(info)
             break
         end
 

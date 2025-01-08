@@ -657,7 +657,6 @@ function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
         end
         #todo check if this is actually positive
         rule.τ_new = (- desc_curr_all / (desc_next_all - desc_curr_all)) * next.τ
-
         rule.τ_r = next.τ
         rule.val_r = desc_next_all
         return false
