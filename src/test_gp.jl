@@ -62,11 +62,10 @@ callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
 is_converged = ResidualEvalConverged(tol, callback)
 
 gradient = H1Gradient(basis)
-stepsize = ApproxHessianStep()
 #backtracking = StandardBacktracking(WolfeHZRule(0.05, 0.4, 0.5), stepsize, 10)
 backtracking = AdaptiveBacktracking(
-        WolfeHZRule(0.05, 0.25, 0.5),
-        ExactHessianStep(), 10);
+        WolfeHZRule(0.01, 0.25, 0.5),
+        ExactHessianStep(), 100);
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg2 = riemannian_conjugate_gradient(basis; 
@@ -76,7 +75,7 @@ scfres_rcg2 = riemannian_conjugate_gradient(basis;
         transport_grad = DifferentiatedRetractionTransport(),
         callback = callback, is_converged = is_converged,
         gradient = gradient, 
-        #cg_param = ParamZero(),
+        cg_param = ParamFR_PRP(),
         backtracking = backtracking);
 println(DFTK.timer)
 
