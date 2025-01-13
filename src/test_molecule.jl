@@ -16,8 +16,8 @@ include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
 #model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [1,1,1]);
-#model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
-model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
+model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
+#model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
 
 # Convergence we desire in the residual
 tol = 1e-8;
@@ -49,6 +49,10 @@ backtracking = AdaptiveBacktracking(
         WolfeHZRule(0.05, 0.1, 0.5),
         ExactHessianStep(), 10);
 
+# backtracking = StandardBacktracking(
+#         WolfeHZRule(0.05, 0.1, 0.5),
+#         ApproxHessianStep(), 10);
+
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
@@ -64,11 +68,14 @@ callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
 is_converged = ResidualEvalConverged(tol, callback)
 
 gradient = H1Gradient(basis)
-stepsize = ApproxHessianStep()
-#backtracking = StandardBacktracking(WolfeHZRule(0.05, 0.4, 0.5), stepsize, 10)
-backtracking = AdaptiveBacktracking(
-        WolfeHZRule(0.05, 0.25, 0.5),
-        ExactHessianStep(), 10);
+# backtracking = AdaptiveBacktracking(
+#         WolfeHZRule(0.05, 0.1, 0.5),
+#         ExactHessianStep(), 10);
+
+backtracking = StandardBacktracking(
+        WolfeHZRule(0.05, 0.1, 0.5),
+        ApproxHessianStep(), 10);
+
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg2 = riemannian_conjugate_gradient(basis; 

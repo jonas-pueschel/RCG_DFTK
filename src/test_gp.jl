@@ -50,7 +50,7 @@ cg_param = ParamFR_PRP()
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
-        tol, maxiter = 1000, 
+        tol, maxiter = 600, 
         cg_param,
         callback = callback, is_converged = is_converged,
         gradient = gradient, backtracking = backtracking);

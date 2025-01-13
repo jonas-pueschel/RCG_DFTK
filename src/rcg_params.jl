@@ -610,7 +610,7 @@ function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
     if (E_next > E_current + (rule.c_1 * desc_curr_all + 100 * eps(Float64) * abs(E_current)) && rule.c_1 != 0)
         #Armijo condition not satisfied --> reset HZ
         rule.τ_l = nothing
-        rule.τ_r = rule.τ_new
+        rule.τ_r = nothing
         rule.τ_new = rule.δ * next.τ
         return false
     elseif (abs(desc_next_all) <= rule.c_2 * abs(desc_curr_all))
