@@ -139,10 +139,17 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         # calculate new direction
         η = -grad + β .* T_η_old
 
+        #check if gradient is a descent direction. If it is, cancel
+        if (real(sum(gamma)) <= 0)
+            @warn "metric not positive definite (gradient is not ascent direction)"
+            break
+        end
         #check if η is a descent direction. If not, restart
         desc = [dot(η[ik],res[ik]) for ik in 1:Nk]
         if (real(sum(desc)) >= 0)
             @warn "the search direction is not a descent direction, try to use a better initial guess"
+            desc .= -gamma
+            η .= -grad
         end
     end
 

@@ -31,13 +31,33 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
     return g
 end
 
-
-
 struct L2Gradient <: AbstractGradient end
 function calculate_gradient(ψ, Hψ, H, Λ, res, ::L2Gradient)
     return res
 end
 
+struct HessianGradient <: AbstractGradient 
+    basis
+    tol::Float64
+end
+function calculate_gradient(ψ, Hψ, H, Λ, res, hg::HessianGradient)
+    #TODO check the DFTK implementation
+
+    norm_res = norm(res)
+
+    #this already has been done somewhere else but is not passed
+    model = basis.model
+    filled_occ = DFTK.filled_occupation(model)
+    n_spin = model.n_spin_components
+    n_bands = DFTK.div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    @assert n_bands == size(ψ[1], 2)
+
+    # number of kpoints and occupation
+    Nk = length(basis.kpoints)
+    occupation = [filled_occ * ones(Float64, n_bands) for _ = 1:Nk]
+
+    return norm_res * DFTK.solve_ΩplusK(hg.basis, ψ, res/norm_res, occupation; tol=hg.tol).δψ
+end
 
 abstract type AbstractShiftStrategy end
 
@@ -45,32 +65,19 @@ abstract type AbstractShiftStrategy end
 mutable struct EAGradient <: AbstractGradient
     const basis
     const itmax::Int64
-    const rtol::Float64
-    const atol::Float64
+    const tol::Float64
     const Pks
     const shift::AbstractShiftStrategy
-    const krylov_solver #solver for linear systems
     const h_solver::AbstractHSolver   #type of solver for H 
     Hinv_ψ
 
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, rtol = 1e-2, atol = 1e-16, krylov_solver = Krylov.minres, h_solver = NestedHSolver(basis, ProjectedSystemInnerSolver), Pks = nothing) where {T}
+    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing) where {T}
         if isnothing(Pks)
             Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         end
-        return new(basis, itmax, rtol, atol, Pks, shift, krylov_solver, h_solver, nothing)
+        return new(basis, itmax, tol, Pks, shift, h_solver, nothing)
     end
 end
-
-function default_EA_gradient(basis)
-    return EAGradient(basis, CorrectedRelativeΛShift(); 
-        rtol = 2.5e-2,
-        itmax = 10,
-        h_solver = LocalOptimalHSolver(),
-        krylov_solver = Krylov.minres,
-        Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-    ) 
-end
-
 
 struct ConstantShift <: AbstractShiftStrategy 
     Σ
@@ -129,7 +136,7 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     end
 
 
-    X = solve_H(ea_grad.krylov_solver, H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.rtol, ea_grad.Pks, ea_grad.h_solver)
+    X = solve_H(H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.tol, ea_grad.Pks, ea_grad.h_solver)
 
     #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
     
@@ -542,7 +549,6 @@ end
 
 abstract type AbstractBacktrackingRule end
 
-default_rule() = NonmonotoneRule(0.95, 0.0001, 0.5, nothing, nothing)
 
 @kwdef mutable struct NonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64

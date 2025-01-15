@@ -22,9 +22,13 @@ function unpack_general(x::AbstractVector, n_rows, n_cols)
 end
 
 struct NaiveHSolver <: AbstractHSolver 
-    #TODO: put krylov solver here
+    solve_horizontal::Bool
+    krylov_solver
+    function NaiveHSolver(; solve_horizontal = false, krylov_solver = Krylov.minres)
+        return new(solve_horizontal, krylov_solver)
+    end
 end
-DFTK.@timing function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing)
+DFTK.@timing function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing)
     Nk = size(ψ)[1]
     T = Base.Float64
 
@@ -40,27 +44,29 @@ DFTK.@timing function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, tol, Pks,
 
         function apply_H(x)
             Y = unpack(x)
-            return pack(H[ik] * Y - Y * σ[ik])
+            HY = H[ik] * Y - Y * σ[ik]
+            return pack(nhs.solve_horizontal ? HY - ψ[ik] * (ψ[ik]'HY) : HY)
         end
     
         J = LinearMap{T}(apply_H, size(rhs, 1))
 
         function apply_Prec(x)
-            Y = unpack(x)
-            return pack(Pks[ik] \ Y)
+            Y  = unpack(x)
+            PY = Pks[ik] \ Y
+            return pack(nhs.solve_horizontal ? PY - ψ[ik] * (ψ[ik]'PY) : PY)
         end
         M = LinearMap{T}(apply_Prec, size(rhs, 1))
 
 
         if (isnothing(ξ0))
-            sol, stats = krylov_solver(J, rhs; M, itmax, atol = tol, verbose = 0)
+            sol, stats = nhs.krylov_solver(J, rhs; M, itmax, atol = tol, verbose = 0)
         else
             ξ0k = ξ0[ik] / norm_rhs
-            sol, stats = krylov_solver(J, rhs, pack(ξ0k); M, itmax, atol = tol, verbose = 0)
+            sol, stats = nhs.krylov_solver(J, rhs, pack(ξ0k); M, itmax, atol = tol, verbose = 0)
         end
 
         if (!stats.solved)
-            @warn "inner solver failed to converge, lower tol or increase inner iter"
+            #@warn "inner solver failed to converge, lower tol or increase inner iter"
         end
 
         push!(res, norm_rhs * unpack(sol))
@@ -70,13 +76,13 @@ DFTK.@timing function solve_H(krylov_solver, H, b, σ, ψ, Hψ, itmax, tol, Pks,
 end
 
 struct GlobalOptimalHSolver <: AbstractHSolver 
-    solve_horizontal
+    solve_horizontal::Bool
     function GlobalOptimalHSolver(; solve_horizontal = true)
         return new(solve_horizontal)
     end
 end
 
-DFTK.@timing function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver)
+DFTK.@timing function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)
@@ -150,7 +156,7 @@ end
 
 struct LocalOptimalHSolver <: AbstractHSolver end
 
-DFTK.@timing function solve_H(krylov_solver, H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
+DFTK.@timing function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)

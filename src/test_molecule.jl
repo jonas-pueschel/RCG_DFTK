@@ -38,10 +38,9 @@ is_converged = ResidualEvalConverged(tol, callback)
 shift = CorrectedRelativeΛShift(; μ = 0.01)
 
 gradient = EAGradient(basis, shift; 
-        rtol = 2.5e-2,
+        tol = 2.5e-2,
         itmax = 10,
         h_solver = GlobalOptimalHSolver(),
-        krylov_solver = Krylov.minres,
         Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         ) 
 

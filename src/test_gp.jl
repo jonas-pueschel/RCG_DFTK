@@ -19,12 +19,14 @@ model, basis = gp2D_setup(Ecut = 400);
 tol = 1e-8;
 
 filled_occ = DFTK.filled_occupation(model);
+occupation = [filled_occ * ones(Float64, n_bands)  for kpt in basis.kpoints];
 n_spin = model.n_spin_components;
 n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp);
 ψ1 = [DFTK.random_orbitals(basis, kpt, n_bands) for kpt in basis.kpoints];
-ρ1 = guess_density(basis)
+ρ1 = DFTK.compute_density(basis, ψ1, occupation)
+#ρ1 = guess_density(basis)
 
-defaultCallback = RcgDefaultCallback(); #no callback because >1000 iterations
+defaultCallback = RcgDefaultCallback(); 
 
 #EARCG
 println("EARCG")
@@ -34,23 +36,25 @@ is_converged = ResidualEvalConverged(tol, callback)
 shift = ConstantShift(0.0)
 
 gradient = EAGradient(basis, shift; 
-        rtol = 0.05,
-        itmax = 25,
-        h_solver = NaiveHSolver(),
-        krylov_solver = Krylov.cg,
+        tol = 0.025,
+        itmax = 10,
+        h_solver = NaiveHSolver(;krylov_solver = Krylov.cg),
         Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         ) 
 
+# backtracking = AdaptiveBacktracking(
+#         WolfeHZRule(0.05, 0.1, 0.5),
+#         ExactHessianStep(), 10);
 backtracking = AdaptiveBacktracking(
         WolfeHZRule(0.05, 0.1, 0.5),
-        ExactHessianStep(), 10);
+        ConstantStep(1.0), 10);
 
 cg_param = ParamFR_PRP()
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
-        tol, maxiter = 600, 
+        tol, maxiter = 1000, 
         cg_param,
         callback = callback, is_converged = is_converged,
         gradient = gradient, backtracking = backtracking);
