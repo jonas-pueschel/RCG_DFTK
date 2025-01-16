@@ -597,13 +597,15 @@ mutable struct WolfeHZRule <: AbstractBacktrackingRule
     const c_1::Float64
     const c_2::Float64
     const δ::Float64
+    const τ_min::Float64
+    const τ_max::Float64
     τ_l
     τ_r
     τ_new
     val_l
     val_r
-    function WolfeHZRule(c_1, c_2, δ)
-        return new(c_1, c_2, δ, nothing, nothing, nothing, nothing, nothing)
+    function WolfeHZRule(c_1, c_2, δ; τ_min = 0.05, τ_max = 10)
+        return new(c_1, c_2, δ, τ_min, τ_max, nothing, nothing, nothing, nothing, nothing)
     end
 end
 function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
@@ -689,7 +691,7 @@ function backtrack(τ, rule::WolfeHZRule)
     if (isnothing(rule.τ_new))
         return τ
     end
-    return rule.τ_new
+    return max(min(rule.τ_new, rule.τ_max), rule.τ_min)
 end
 
 function update_rule!(next, rule::WolfeHZRule) 

@@ -13,15 +13,15 @@ include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
 
-model, basis = gp2D_setup(Ecut = 400);
+model, basis = gp2D_setup(Ecut = 400, a = 15, κ = 100, ω = 0.0, v = (1.0, 1.0));
 
 # Convergence we desire in the residual
 tol = 1e-8;
 
 filled_occ = DFTK.filled_occupation(model);
-occupation = [filled_occ * ones(Float64, n_bands)  for kpt in basis.kpoints];
 n_spin = model.n_spin_components;
 n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp);
+occupation = [filled_occ * ones(Float64, n_bands)  for kpt in basis.kpoints];
 ψ1 = [DFTK.random_orbitals(basis, kpt, n_bands) for kpt in basis.kpoints];
 ρ1 = DFTK.compute_density(basis, ψ1, occupation)
 #ρ1 = guess_density(basis)
@@ -36,7 +36,7 @@ is_converged = ResidualEvalConverged(tol, callback)
 shift = ConstantShift(0.0)
 
 gradient = EAGradient(basis, shift; 
-        tol = 0.025,
+        tol = 0.01,
         itmax = 10,
         h_solver = NaiveHSolver(;krylov_solver = Krylov.cg),
         Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
@@ -60,6 +60,9 @@ scfres_rcg1 = riemannian_conjugate_gradient(basis;
         gradient = gradient, backtracking = backtracking);
 println(DFTK.timer)
 
+using Plots
+heatmap(scfres_rcg1.ρ[:, :, 1, 1], c=:blues)
+
 println("H1RCG")
 #RCG: H1 Gradient
 callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
@@ -68,7 +71,7 @@ is_converged = ResidualEvalConverged(tol, callback)
 gradient = H1Gradient(basis)
 #backtracking = StandardBacktracking(WolfeHZRule(0.05, 0.4, 0.5), stepsize, 10)
 backtracking = AdaptiveBacktracking(
-        WolfeHZRule(0.01, 0.25, 0.5),
+        WolfeHZRule(0.01, 0.25, 0.5, τ_min = 0.0001),
         ExactHessianStep(), 100);
 
 DFTK.reset_timer!(DFTK.timer)
