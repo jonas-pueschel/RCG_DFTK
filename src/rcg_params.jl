@@ -449,41 +449,52 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::P
     return β
 end
 
-
 abstract type AbstractStepSize end
 
-struct ExactHessianStep <: AbstractStepSize end
+struct ExactHessianStep <: AbstractStepSize
+    basis
+    occupation
+    function ExactHessianStep(basis::PlaneWaveBasis{T}) where {T}
+        model = basis.model
+        filled_occ = DFTK.filled_occupation(model)
+        n_spin = model.n_spin_components
+        n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+        occupation = [filled_occ * ones(T, n_bands) for kpt = basis.kpoints]
+        return new(basis, occupation)
+    end
+end
 #DFTK.@timing 
-function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ExactHessianStep; next = nothing)
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ExactHessianStep)
     Nk = size(ψ)[1]
 
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)] 
     η_Ω_η = [dot(η[ik],Ω_η[ik]) for ik in 1:Nk]
-    K_η = DFTK.apply_K(basis, η, ψ, ρ, occupation)
+    K_η = DFTK.apply_K(stepsize.basis, η, ψ, ρ, stepsize.occupation)
     η_K_η = [dot(η[ik],K_η[ik]) for ik in 1:Nk]
 
     τ = min(real(- sum(desc)/sum((abs(η_Ω_η[ik] + η_K_η[ik])) for ik in 1:Nk))) 
-    return τ
+    return get_next(τ)
 end
 
 
 struct ApproxHessianStep <: AbstractStepSize end
 #DFTK.@timing 
-function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ApproxHessianStep; next = nothing)
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ApproxHessianStep)
     Nk = size(ψ)[1]
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)] 
     η_Ω_η = [dot(η[ik],Ω_η[ik]) for ik in 1:Nk]
 
     τ = real(- sum(desc)/sum(abs(η_Ω_η[ik]) for ik in 1:Nk))
-    return τ
+    return get_next(τ)
 end
 
 struct ConstantStep <: AbstractStepSize
     τ_const
 end
 #DFTK.@timing 
-function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::ConstantStep; next = nothing)
-    return stepsize.τ_const
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ConstantStep)
+    τ = stepsize.τ_const
+    return get_next(τ)
 end
 
 mutable struct AlternatingStep <: AbstractStepSize
@@ -494,18 +505,16 @@ mutable struct AlternatingStep <: AbstractStepSize
     end
 end
 #DFTK.@timing 
-function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::AlternatingStep; next = nothing)
-    Nk = size(ψ)[1]
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::AlternatingStep)
     τ = stepsize.τ_list[(stepsize.iter += 1)%length(stepsize.τ_list) + 1]
-
-    return τ
+    return get_next(τ)
 end
 
 #Note: This may only show intended behaviour for β ≡ 0, i.e. η = -grad
 mutable struct BarzilaiBorweinStep <: AbstractStepSize
     const τ_min::Float64
     const τ_max::Float64
-    const τ_0
+    const τ_0::AbstractStepSize
     τ_old
     desc_old
     is_odd
@@ -514,15 +523,11 @@ mutable struct BarzilaiBorweinStep <: AbstractStepSize
     end
 end
 #DFTK.@timing 
-function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize::BarzilaiBorweinStep; next = nothing)
+function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::BarzilaiBorweinStep)
     Nk = size(ψ)[1]
     if (stepsize.τ_old === nothing)
         #first step
-        if (stepsize.τ_0 isa AbstractStepSize)
-            τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, stepsize.τ_0)
-        else    
-            τ = stepsize.τ_0;
-        end
+        next = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize.τ_0)
     else
         temp = [real(dot(T_η_old[ik],res[ik])) for ik = 1:Nk];
         if (stepsize.is_odd)
@@ -535,20 +540,19 @@ function calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, 
             q = sum(temp) - p
             τ = stepsize.τ_old .* abs(p/q)
         end
+        τ = min(max(τ, stepsize.τ_min), stepsize.τ_max);
+        next = get_next(τ)
     end
-
-    τ = min(max(τ, stepsize.τ_min), stepsize.τ_max);
 
     #update params
     stepsize.desc_old = desc;
     stepsize.is_odd = !stepsize.is_odd;
-    stepsize.τ_old = τ;
+    stepsize.τ_old = next.τ;
     
-    return τ;
+    return next;
 end
 
 abstract type AbstractBacktrackingRule end
-
 
 @kwdef mutable struct NonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64
@@ -569,9 +573,10 @@ function check_rule(E_current, desc_current, next, rule::NonmonotoneRule)
     E_next = next.energies_next.total
     return E_next <= rule.c + rule.β * real(sum(next.τ .* desc_current));
 end
-function backtrack(τ, rule::NonmonotoneRule)
-    return rule.δ * τ
+function backtrack(next, rule::NonmonotoneRule)
+    return rule.δ * next.τ
 end
+
 function update_rule!(next, rule::NonmonotoneRule)
     E = next.energies_next.total
     rule.q = rule.α * rule.q + 1
@@ -587,129 +592,111 @@ function check_rule(E_current, desc_current, next, rule::ArmijoRule)
     E_next = next.energies_next.total
     return E_next <= E_current + (rule.β * (real(sum(next.τ .* desc_current))) + 32 * eps(Float64) * abs(E_current))
 end
-function backtrack(τ, rule::ArmijoRule)
-    return rule.δ * τ
+function backtrack(next, rule::ArmijoRule)
+    return rule.δ * next.τ
 end
 function update_rule!(next, ::ArmijoRule) end
 
-
-mutable struct WolfeHZRule <: AbstractBacktrackingRule
-    const c_1::Float64
-    const c_2::Float64
+mutable struct ModifiedSecantRule <: AbstractBacktrackingRule
     const δ::Float64
-    const τ_min::Float64
-    const τ_max::Float64
-    τ_l
-    τ_r
-    τ_new
-    val_l
-    val_r
-    function WolfeHZRule(c_1, c_2, δ; τ_min = 0.05, τ_max = 10)
-        return new(c_1, c_2, δ, τ_min, τ_max, nothing, nothing, nothing, nothing, nothing)
+    const σ::Float64
+    const ϵ::Float64
+    const γ::Float64
+    a
+    b
+    slope_a
+    slope_b
+    val_zero
+    τ_next
+    function ModifiedSecantRule(δ, σ, ϵ, γ)
+        return new(δ, σ, ϵ, γ, nothing, nothing, nothing, nothing, nothing, nothing)
     end
 end
-function check_rule(E_current, desc_current, next, rule::WolfeHZRule)
+function check_rule(E_current, desc_current, next, rule::ModifiedSecantRule)
     #small correction if change in energy is small TODO: better workaround.
     E_next = next.energies_next.total
-    desc_next = [dot(res_next_k, Tη_next_k) for (res_next_k, Tη_next_k) = zip(next.res_next, next.Tη_next)]
-    desc_next_all = real(sum(desc_next))
-    desc_curr_all = real(sum(desc_current))
+    slope_next = real(sum([dot(res_next_k, Tη_next_k) for (res_next_k, Tη_next_k) = zip(next.res_next, next.Tη_next)]))
+    slope_zero = real(sum(desc_current))
 
-    if (E_next > E_current + (rule.c_1 * desc_curr_all + 100 * eps(Float64) * abs(E_current)) && rule.c_1 != 0)
-        #Armijo condition not satisfied --> reset HZ
-        rule.τ_l = nothing
-        rule.τ_r = nothing
-        rule.τ_new = rule.δ * next.τ
-        return false
-    elseif (abs(desc_next_all) <= rule.c_2 * abs(desc_curr_all))
-        #Curvature condition satisfied --> prepare for next iteration
+    check_armijo = E_next - E_current ≤ rule.δ * next.τ * slope_zero 
+    check_curvature = abs(slope_next) ≤ rule.σ * abs(slope_zero)
+    check_wolfe_mod = abs(slope_next) ≤ min(1 - 2 * rule.δ, rule.σ) * abs(slope_zero) 
+    check_reduce = E_next ≤ (1 + rule.ϵ) * abs(E_current)
+
+    if (check_armijo && check_curvature) || (check_wolfe_mod && check_reduce)
         return true
     end
 
-    if (isnothing(rule.τ_l))
-        rule.τ_l = 0.0 * next.τ
-        rule.val_l = desc_curr_all
-    end
-    if (isnothing(rule.τ_r) || (rule.τ_new != next.τ))
-        if (desc_next_all < desc_curr_all)
-            #bandaid edge case #1
-            update_rule!(nothing, rule)
-            rule.τ_new = (1/rule.δ) * next.τ
-            return false
-        end
-        #todo check if this is actually positive
-        rule.τ_new = (- desc_curr_all / (desc_next_all - desc_curr_all)) * next.τ
-        rule.τ_r = next.τ
-        rule.val_r = desc_next_all
+    if (isnothing(rule.a))
+        # initialize search interval
+        rule.a = 0.0
+        rule.slope_a = slope_zero
+        rule.b = next.τ
+        rule.slope_b = slope_next
+        rule.val_zero = E_current
         return false
     end
 
-    if (rule.val_l * rule.val_r <= 0)
-        #make interval smaller
-        if (rule.val_l * desc_next_all > 0 && rule.τ_new > rule.τ_l )
-            rule.τ_l = rule.τ_new
-            rule.val_l = desc_next_all
-        elseif (rule.val_l * desc_next_all <= 0 && rule.τ_new < rule.τ_r) 
-            rule.τ_r = rule.τ_new
-            rule.val_r = desc_next_all
-        end
-    else
-        #extend interval into respective direction
-        if (rule.τ_new > rule.τ_r)
-            rule.τ_l = rule.τ_r
-            rule.val_l = rule.val_r 
-            rule.τ_r = rule.τ_new
-            rule.val_r = desc_next_all
-        elseif (rule.τ_new < rule.τ_l)
-            rule.τ_r = rule.τ_l
-            rule.val_r = rule.val_l 
-            rule.τ_l = rule.τ_new
-            rule.val_l = desc_next_all
+    if (E_next > (1 + rule.ϵ) * rule.val_zero && slope_next < 0)
+        rule.τ_next = rule.γ * rule.b
+        reset_rule!(rule)
+        return false
+    end
+
+    if (next.τ < rule.a)
+        rule.τ_next = rule.b/rule.γ
+        reset_rule!(rule)
+        return false
+    end
+
+    # update interval
+    c = next.τ
+    slope_c = slope_next
+    if (c > rule.b) #automatically rule.slope_b < 0 holds here
+        # shift interval to the right
+        rule.a = rule.b
+        rule.slope_a = rule.slope_b
+        rule.b = c
+        rule.slope_b = slope_c
+    elseif (rule.a ≤ c && c ≤ rule.b)
+        if (slope_c < 0)
+            # take right interval
+            rule.a = c
+            rule.slope_a = slope_c
         else
-            #else: we are screwed lol
-            rule.τ_l = rule.τ_new
-            rule.val_l = desc_next_all
+            # take left interval
+            rule.b = c
+            rule.slope_b = slope_c
         end
     end
-
-    if (rule.τ_r < rule.τ_l)
-        rule.τ_r, rule.τ_l, rule.val_r, rule.val_l = rule.τ_l, rule.τ_r, rule.val_l, rule.val_r 
-    end
-    
-    ω = (- rule.val_l / (rule.val_r - rule.val_l)) 
-    rule.τ_new = ω * rule.τ_r + (1 - ω) * rule.τ_l
-
-    # print("val l: "); println(rule.val_l)
-    # print("val r: "); println(rule.val_r)
-    # print("tau l: "); println(rule.τ_l)
-    # print("tau r: "); println(rule.τ_r)
-    # print("tau new: "); println(rule.τ_new)
     return false
 end
 
-function backtrack(τ, rule::WolfeHZRule)
-    if (isnothing(rule.τ_new))
-        return τ
+function backtrack(next, rule::ModifiedSecantRule)
+    
+    if (isnothing(rule.a))
+        return rule.τ_next
     end
-    return max(min(rule.τ_new, rule.τ_max), rule.τ_min)
+    #secant step
+    return (rule.a * rule.slope_b - rule.b * rule.slope_a)/(rule.slope_b - rule.slope_a)
 end
 
-function update_rule!(next, rule::WolfeHZRule) 
-    rule.τ_new = nothing
-    rule.τ_r = nothing
-    rule.val_r = nothing
-    rule.τ_l = nothing
-    rule.val_l = nothing
+function reset_rule!(rule::ModifiedSecantRule) 
+    rule.a = nothing
+    rule.b = nothing
+    rule.slope_a = nothing
+    rule.slope_b = nothing
+    rule.val_zero = nothing
 end
 
+function update_rule!(next, rule::ModifiedSecantRule) 
+    reset_rule!(rule::ModifiedSecantRule)
+end
 
+abstract type IterationStrategy end
 
-abstract type AbstractBacktracking end
-
-
-#
-#TODO integrate the transport here
-DFTK.@timing function do_step(basis, occupation, ψ, η, τ, retraction, transport)
+#DFTK.@timing 
+function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetraction, transport::AbstractTransport)
     Nk = size(ψ)[1]
 
     ψ_next = calculate_retraction(ψ, η, τ, retraction)
@@ -727,8 +714,8 @@ DFTK.@timing function do_step(basis, occupation, ψ, η, τ, retraction, transpo
     (; ψ_next, ρ_next, energies_next, H_next, Hψ_next, Λ_next, res_next, Tη_next, τ)
 end
 
-
-mutable struct StandardBacktracking <: AbstractBacktracking 
+# standard backtracking: every step, an initial stepsize 
+mutable struct StandardBacktracking <: IterationStrategy 
     const rule::AbstractBacktrackingRule
     const stepsize::AbstractStepSize
     const maxiter::Int64
@@ -738,37 +725,30 @@ mutable struct StandardBacktracking <: AbstractBacktracking
     end
 end
 
-DFTK.@timing function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
-    retraction::AbstractRetraction, transport::AbstractTransport, backtracking::StandardBacktracking)
+#DFTK.@timing 
+function do_step(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::StandardBacktracking)
 
-    τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, backtracking.stepsize)
-
-    next = nothing
+    next = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.stepsize)
 
     for k = 0:backtracking.maxiter
-        if (k != 0)
-            τ = backtrack(τ, backtracking.rule)
-            #TODO: this should maybe be solved differently, i.e. by using a pointer 
-            if (isa(backtracking.stepsize, BarzilaiBorweinStep))
-                #τ_old is set when calculated, thus we need to update it when backtracking
-                backtracking.stepsize.τ_old = τ
-            end
-        end
-        
-        next = do_step(basis, occupation, ψ, η, τ, retraction, transport)
-        
-
         if check_rule(energies.total, desc, next, backtracking.rule)
             break
         end 
+        τ = backtrack(next, backtracking.rule)
+        next = get_next(τ)
+        #TODO: this should maybe be solved differently, i.e. by using a pointer 
+        if (isa(backtracking.stepsize, BarzilaiBorweinStep))
+            #τ_old is set when calculated, thus we need to update it when backtracking
+            backtracking.stepsize.τ_old = τ
+        end
     end
 
     update_rule!(next, backtracking.rule);
     return next;
 end
 
-
-mutable struct AdaptiveBacktracking <: AbstractBacktracking 
+# do backtracking, but re-use previous step size instead of re-calculating
+mutable struct AdaptiveBacktracking <: IterationStrategy 
     const rule::AbstractBacktrackingRule
     const τ_0::AbstractStepSize
     const maxiter::Int64
@@ -777,23 +757,23 @@ mutable struct AdaptiveBacktracking <: AbstractBacktracking
         return new(rule, stepsize, maxiter, nothing)
     end
 end
-DFTK.@timing function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, energies, 
-    retraction::AbstractRetraction, transport::AbstractTransport, backtracking::AdaptiveBacktracking)
+#DFTK.@timing 
+function do_step(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::AdaptiveBacktracking)
     
     if isnothing(backtracking.τ_old)
-        τ = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, occupation, basis, backtracking.τ_0)
+        next = calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.τ_0)
+        τ = next.τ
     else
         τ = backtracking.τ_old
+        next = get_next(τ)
     end
-
-    next = do_step(basis, occupation, ψ, η, τ, retraction, transport)
 
     for k = 1:backtracking.maxiter
         if check_rule(energies.total, desc, next, backtracking.rule)
             break
         end 
-        τ = backtrack(τ, backtracking.rule)
-        next = do_step(basis, occupation, ψ, η, τ, retraction, transport)
+        τ = backtrack(next, backtracking.rule)
+        next = get_next(τ)
     end
 
     backtracking.τ_old = τ
@@ -801,3 +781,10 @@ DFTK.@timing function perform_backtracking(ψ, η, grad, res, T_η_old, desc, Λ
     return next
 end
 
+struct NoBacktracking <:IterationStrategy
+    stepsize::AbstractStepSize
+end
+
+DFTK.@timing function do_step(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::NoBacktracking)
+    return calculate_τ(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.stepsize)
+end

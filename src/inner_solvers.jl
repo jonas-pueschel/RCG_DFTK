@@ -28,7 +28,8 @@ struct NaiveHSolver <: AbstractHSolver
         return new(solve_horizontal, krylov_solver)
     end
 end
-DFTK.@timing function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing)
+#DFTK.@timing 
+function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing)
     Nk = size(ψ)[1]
     T = Base.Float64
 
@@ -82,7 +83,8 @@ struct GlobalOptimalHSolver <: AbstractHSolver
     end
 end
 
-DFTK.@timing function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver)
+#DFTK.@timing 
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)
@@ -156,7 +158,8 @@ end
 
 struct LocalOptimalHSolver <: AbstractHSolver end
 
-DFTK.@timing function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
+#DFTK.@timing 
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)

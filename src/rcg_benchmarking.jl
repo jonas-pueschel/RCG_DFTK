@@ -1,5 +1,8 @@
 # Structs and methods used for performance benchmarking
 
+using Plots
+using LaTeXStrings
+
 mutable struct ResidualEvalCallback
     norm_residuals
     energies 
@@ -123,15 +126,15 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
 
     rcg_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["inner_timers"];
     calls_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["perform_backtracking", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
         get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
         get_key_chain_value(rcg_timer, ["solve_H", "DftHamiltonian multiplication", "local+kinetic"], "n_calls")
 
     calls_energy_hamiltonian = get_key_chain_value(rcg_timer, ["energy_hamiltonian"], "n_calls") 
-        + get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step","energy_hamiltonian"], "n_calls")
-    calls_compute_density = get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step", "compute_density"], "n_calls")
-    calls_apply_K =  get_key_chain_value(rcg_timer, ["perform_backtracking", "apply_K"], "n_calls")
+        + get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg","energy_hamiltonian"], "n_calls")
+    calls_compute_density = get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "compute_density"], "n_calls")
+    calls_apply_K =  get_key_chain_value(rcg_timer, ["do_step", "apply_K"], "n_calls")
     push!(callback.calls_apply_K, calls_apply_K);
     push!(callback.calls_compute_density, calls_compute_density);
     push!(callback.calls_energy_hamiltonian, calls_energy_hamiltonian);
@@ -139,13 +142,13 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
 
     #total_time_ns 
     # callback.time_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
-    #     get_key_chain_value(rcg_timer, ["perform_backtracking", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
-    #     get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
+    #     get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
+    #     get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
     #     get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns")
     # callback.time_energy_hamiltonian = get_key_chain_value(rcg_timer, ["energy_hamiltonian"], "total_time_ns") 
-    #     + get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step","energy_hamiltonian"], "total_time_ns")
-    # callback.time_compute_density = get_key_chain_value(rcg_timer, ["perform_backtracking", "do_step", "compute_density"], "total_time_ns")
-    # callback.time_apply_K =  get_key_chain_value(rcg_timer, ["perform_backtracking", "apply_K"], "total_time_ns")
+    #     + get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg","energy_hamiltonian"], "total_time_ns")
+    # callback.time_compute_density = get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "compute_density"], "total_time_ns")
+    # callback.time_apply_K =  get_key_chain_value(rcg_timer, ["do_step", "apply_K"], "total_time_ns")
 
 end
 struct EvalSCF <: AbstractEvalMethod end
@@ -215,4 +218,50 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     # callback.time_energy_hamiltonian = dcm_timer["energy_hamiltonian"]["total_time_ns"];
     # callback.time_compute_density = dcm_timer["compute_density"]["total_time_ns"];
     # callback.time_apply_K = 0.0;
+end
+
+
+function plot_callbacks(callbacks, names, ψ1, basis)
+    model = basis.model
+    filled_occ = DFTK.filled_occupation(model)
+    n_spin = model.n_spin_components
+    n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    Nk = length(basis.kpoints)
+    occupation = [filled_occ * ones(Float64, n_bands) for _ = 1:Nk]
+
+    norm_res_0 = norm(DFTK.compute_projected_gradient(basis, ψ1, occupation))
+
+    # iterations
+    plt1 = plot(; yscale = :log, ylabel = L"\|\|R^{(k)}\|\|_F", xlabel = "Iterations")
+    for (cb , method_name) = zip(callbacks, names)
+        resls = [norm_res_0]
+        push!(resls, getfield(cb, :norm_residuals)[1:end-1]...)
+        its = (0:(length(resls)-1)) 
+        plot!(its, resls, label = method_name)
+    end
+    display(plt1)
+
+    # Hamiltonians
+    plt2 = plot(; yscale = :log, ylabel = L"\|\|R^{(k)}\|\|_F", xlabel = "Hamiltonians")
+    for (cb , method_name) = zip(callbacks, names)
+        resls = [norm_res_0]
+        push!(resls, getfield(cb, :norm_residuals)[1:end-1]...)
+        hams = [0.0]
+        push!(hams, getfield(cb, :calls_DftHamiltonian)[1:end-1]...)
+        hams .*= 1/n_bands
+        plot!(hams, resls, label = method_name)
+    end
+    display(plt2)
+
+    # Times
+    plt3 = plot(; yscale = :log, ylabel = L"\|\|R^{(k)}\|\|_F", xlabel = "CPU time in s")
+    for (cb , method_name) = zip(callbacks, names)
+        resls = [norm_res_0]
+        push!(resls, getfield(cb, :norm_residuals)[1:end-1]...)
+        times = [0.0]
+        push!(times, getfield(cb, :times_tot)[1:end-1]...)
+        times .*= 1e-9
+        plot!(times, resls, label = method_name)
+    end
+    display(plt3)
 end

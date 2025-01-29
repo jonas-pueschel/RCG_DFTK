@@ -15,8 +15,9 @@ include("./rcg.jl")
 include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
-#model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [1,1,1]);
-model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
+#model, basis = silicon_setup(;Ecut = 40, kgrid = [3,3,3], supercell_size = [1,1,1]);
+model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [2,2,2]);
+#model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
 #model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
 
 # Convergence we desire in the residual
@@ -32,8 +33,8 @@ defaultCallback = RcgDefaultCallback();
 
 #EARCG
 println("EARCG")
-callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
-is_converged = ResidualEvalConverged(tol, callback)
+callback_earcg = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
+is_converged = ResidualEvalConverged(tol, callback_earcg)
 
 shift = CorrectedRelativeΛShift(; μ = 0.01)
 
@@ -45,72 +46,90 @@ gradient = EAGradient(basis, shift;
         ) 
 
 backtracking = AdaptiveBacktracking(
-        WolfeHZRule(0.05, 0.1, 0.5),
-        ExactHessianStep(), 10);
-
-# backtracking = StandardBacktracking(
-#         WolfeHZRule(0.05, 0.1, 0.5),
-#         ApproxHessianStep(), 10);
+        ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
+        ExactHessianStep(basis), 10);
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
         tol, maxiter = 100, 
         cg_param = ParamFR_PRP(),
-        callback = callback, is_converged = is_converged,
-        gradient = gradient, backtracking = backtracking);
+        callback = callback_earcg, is_converged = is_converged,
+        gradient = gradient, iteration_strat = backtracking);
 println(DFTK.timer)
 
-println("H1RCG")
-#RCG: H1 Gradient
-callback = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
-is_converged = ResidualEvalConverged(tol, callback)
+# println("H1RCG")
+# #RCG: H1 Gradient
+# callback_h1rcg = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
+# is_converged = ResidualEvalConverged(tol, callback_h1rcg)
 
-gradient = H1Gradient(basis)
+# gradient = H1Gradient(basis)
 # backtracking = AdaptiveBacktracking(
-#         WolfeHZRule(0.05, 0.1, 0.5),
-#         ExactHessianStep(), 10);
+#         ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
+#         ExactHessianStep(basis), 10);
 
+# DFTK.reset_timer!(DFTK.timer)
+# scfres_rcg2 = riemannian_conjugate_gradient(basis; 
+#         ψ = ψ1, ρ = ρ1,
+#         tol, maxiter = 100, 
+#         transport_η = DifferentiatedRetractionTransport(),
+#         transport_grad = DifferentiatedRetractionTransport(),
+#         callback = callback_h1rcg, is_converged = is_converged,
+#         gradient = gradient, 
+#         iteration_strat = backtracking);
+# println(DFTK.timer)
+
+println("L2RCG")
+#RCG: L2 Gradient
+callback_l2rcg = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
+is_converged = ResidualEvalConverged(tol, callback_l2rcg)
+
+gradient = L2Gradient()
 backtracking = StandardBacktracking(
-        WolfeHZRule(0.05, 0.1, 0.5),
+        ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
         ApproxHessianStep(), 10);
-
+# backtracking = AdaptiveBacktracking(
+#         ModifiedSecantRule(0.01, 0.9, 1e-12, 0.5),
+#         ExactHessianStep(basis), 10);
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg2 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
-        tol, maxiter = 100, 
+        tol, maxiter = 200, 
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
-        callback = callback, is_converged = is_converged,
+        callback = callback_l2rcg, is_converged = is_converged,
         gradient = gradient, 
-        #cg_param = ParamZero(),
-        backtracking = backtracking);
+        iteration_strat = backtracking);
 println(DFTK.timer)
 
 #SCF
 println("SCF")
-callback = ResidualEvalCallback(;defaultCallback, method = EvalSCF())
-is_converged = ResidualEvalConverged(tol, callback)
+callback_scf = ResidualEvalCallback(;defaultCallback, method = EvalSCF())
+is_converged = ResidualEvalConverged(tol, callback_scf)
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_scf = self_consistent_field(basis; tol, 
-        callback, 
-        is_converged,
+        callback = callback_scf, 
+        is_converged = is_converged,
         #ψ = ψ1, ρ = ρ1,
         maxiter = 100);print("");
 println(DFTK.timer)
 
 #PDCM
-callback = ResidualEvalCallback(;defaultCallback, method = EvalPDCM())
-is_converged = ResidualEvalConverged(tol, callback)
+callback_pdcm = ResidualEvalCallback(;defaultCallback, method = EvalPDCM())
+is_converged = ResidualEvalConverged(tol, callback_pdcm)
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_dcm = DFTK.direct_minimization(basis,
         ψ = ψ1;
         tol, maxiter = 100,
         linesearch = LineSearches.HagerZhang(),
-        callback = callback, is_converged = is_converged);
+        callback = callback_pdcm, is_converged = is_converged);
 println(DFTK.timer)
 #methods:  LBFGS, GradientDescent, ConjugateGradient
 
+plot_callbacks(
+        [callback_scf, callback_l2rcg, callback_pdcm, callback_earcg],
+        ["SCF", "L2RCG", "PDCM", "EARCG"], 
+        ψ1, basis)
