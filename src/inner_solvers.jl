@@ -21,6 +21,7 @@ function unpack_general(x::AbstractVector, n_rows, n_cols)
     return Y
 end
 
+
 struct NaiveHSolver <: AbstractHSolver 
     solve_horizontal::Bool
     krylov_solver
@@ -29,7 +30,7 @@ struct NaiveHSolver <: AbstractHSolver
     end
 end
 #DFTK.@timing 
-function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing)
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = nothing, Hξ0 = nothing)
     Nk = size(ψ)[1]
     T = Base.Float64
 
@@ -45,7 +46,7 @@ function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = no
 
         function apply_H(x)
             Y = unpack(x)
-            HY = H[ik] * Y - Y * σ[ik]
+            HY = H[ik] * Y - Y * Σ[ik]
             return pack(nhs.solve_horizontal ? HY - ψ[ik] * (ψ[ik]'HY) : HY)
         end
     
@@ -76,6 +77,71 @@ function solve_H(H, b, σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = no
     return res 
 end
 
+struct BandwiseHSolver <: AbstractHSolver 
+    solve_horizontal::Bool
+    krylov_solver
+    function BandwiseHSolver(; solve_horizontal = false, krylov_solver = Krylov.minres)
+        return new(solve_horizontal, krylov_solver)
+    end
+end
+
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks, bhs::BandwiseHSolver; ξ0 = nothing, Hξ0 = nothing)
+    Nk = size(ψ)[1]
+
+    res = []
+    for ik = 1:Nk
+        n_rows, n_cols = size(ψ[ik])
+        res_ik = zeros(ComplexF64, size(ψ[ik]))
+
+        tilde_tol = tol/n_cols
+
+        σ, U = eigen(Σ[ik])
+        
+        tilde_b = b[ik] * U
+
+        if (!isnothing(ξ0))
+            tilde_ξ0 = ξ0[ik] * U
+        end
+
+        for j = 1:n_cols
+            rhs = tilde_b[:,j]
+            norm_rhs = norm(rhs)
+            rhs = rhs / norm_rhs
+
+
+
+            function apply_H(x)
+                HY = H[ik] * x - x * σ[j]
+                return (bhs.solve_horizontal ? HY - ψ[ik] * (ψ[ik]'HY) : HY)
+            end
+        
+            J = LinearMap{ComplexF64}(apply_H, n_rows)
+
+            function apply_Prec(x)
+                PY = Pks[ik] \ x
+                return (bhs.solve_horizontal ? PY - ψ[ik] * (ψ[ik]'PY) : PY)
+            end
+            M = LinearMap{ComplexF64}(apply_Prec, n_rows)
+
+
+            if (isnothing(ξ0))
+                sol, stats = bhs.krylov_solver(J, rhs; M, itmax, atol = tilde_tol, verbose = 0)
+            else
+                ξ0k = tilde_ξ0[j] / norm_rhs
+                sol, stats = bhs.krylov_solver(J, rhs, ξ0k; M, itmax, atol = tilde_tol, verbose = 0)
+            end
+
+            if (!stats.solved)
+                #@warn "inner solver failed to converge, lower tol or increase inner iter"
+            end
+            res_ik[:,j] = sol * norm_rhs
+        end
+        push!(res, res_ik * U')
+    end
+
+    return res 
+end
+
 struct GlobalOptimalHSolver <: AbstractHSolver 
     solve_horizontal::Bool
     function GlobalOptimalHSolver(; solve_horizontal = true)
@@ -84,16 +150,26 @@ struct GlobalOptimalHSolver <: AbstractHSolver
 end
 
 #DFTK.@timing 
-function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver)
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSolver; ξ0 = nothing, Hξ0 = nothing)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)
     
-    #Threads.@threads 
+
     for (ik, Hk, bk, ψk, Σk, Pk_outer) = collect(zip(1:Nk, H.blocks, b, ψ, Σ, Pks_outer))
-        result = global_optimal_solve(Hk, bk, Σk, ψk, Pk_outer, itmax, tol, gos.solve_horizontal)
+        c = bk
+        if !(isnothing(ξ0))
+            ξ0k = ξ0[ik]
+            Hξ0k = isnothing(Hξ0) ? Hk * ξ0[ik] : Hξ0[ik]
+            c -= Hξ0k - ξ0k * Σk 
+        end
+        result = global_optimal_solve(Hk, c, Σk, ψk, Pk_outer, itmax, tol, gos.solve_horizontal)
+        if !(isnothing(ξ0))
+            result += ξ0k
+        end
         results[ik] = result
     end
+
 
     return results
 end
@@ -123,10 +199,10 @@ function global_optimal_solve(Hk, bk, Σk, ψk, Pk, itmax, tol, solve_horizontal
     Y_0 = V'PR
     for iter = 1:itmax
         Y = solve_local_system(A, Σk, C_loc, Y_0)
-        X = V*Y
-        R = C - W*Y + X * Σk
+        #X = V*Y
+        R = C - W*Y + V* (Y* Σk)
         if (norm(R) < tol)
-            return X * norm_bk
+            return V*Y * norm_bk
         end
         temp = apply_Pk(R)
         PR = temp - V * (V'temp)
@@ -148,18 +224,17 @@ function global_optimal_solve(Hk, bk, Σk, ψk, Pk, itmax, tol, solve_horizontal
         Y_0 = vcat(Y, 0.0 * C_add)
     end
     Y = solve_local_system(A, Σk, C_loc, Y_0)
-    X = V*Y
-    R = C - W*Y + X * Σk
+    R = C - W*Y + V* (Y * Σk)
     if norm(R) >= tol
         @warn "inner solver failed to converge, lower tol or increase inner iter"
     end
-    return X * norm_bk
+    return V*Y * norm_bk
 end
 
 struct LocalOptimalHSolver <: AbstractHSolver end
 
 #DFTK.@timing 
-function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver)
+function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, los::LocalOptimalHSolver, ξ0 = nothing, Hξ0 = nothing)
     Nk = size(ψ)[1]
     
     results = Array{Matrix{ComplexF64}}(undef, Nk)

@@ -8,11 +8,12 @@ abstract type AbstractGradient end
 
 struct RiemannianGradient <: AbstractGradient 
     Pks_Metric
+    horizontal
 end
 
-function H1Gradient(basis::PlaneWaveBasis{T}) where {T}
+function H1Gradient(basis::PlaneWaveBasis{T}; horizontal = false) where {T}
     Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-    return RiemannianGradient(Pks)
+    return RiemannianGradient(Pks, horizontal)
 end
 
 function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
@@ -26,7 +27,12 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, riem_grad::RiemannianGradient)
     P_r = [ Pks[ik] \ res[ik] for ik = 1:Nk]
     G1 = [ψ[ik]'P_ψ[ik] for ik = 1:Nk]
     G2 = [ψ[ik]'P_r[ik] for ik = 1:Nk]
-    X = [G1[ik]\G2[ik] for ik = 1:Nk]
+    if (riem_grad.horizontal)
+        X = [G1[ik]\G2[ik] for ik = 1:Nk]
+    else
+        G2 = [G2[ik] + G2[ik]' for ik = 1:Nk]
+        X = [lyap(G1[ik], -G2[ik]) for ik = 1:Nk]
+    end
     g = [P_r[ik] - P_ψ[ik] * X[ik] for ik = 1:Nk]
     return g
 end
@@ -69,13 +75,14 @@ mutable struct EAGradient <: AbstractGradient
     const Pks
     const shift::AbstractShiftStrategy
     const h_solver::AbstractHSolver   #type of solver for H 
+    const naive_formula::Bool
     Hinv_ψ
 
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing) where {T}
+    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
         if isnothing(Pks)
             Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
         end
-        return new(basis, itmax, tol, Pks, shift, h_solver, nothing)
+        return new(basis, itmax, tol, Pks, shift, h_solver, naive_formula, nothing)
     end
 end
 
@@ -100,6 +107,15 @@ DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsSh
     Nk = size(ψ)[1] 
     λ_min = [min(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
     return [λ_min[ik] * shift.μ * I for ik = 1:Nk]
+end
+
+struct RelativeEigsShift2 <: AbstractShiftStrategy
+    μ::Float64
+end
+DFTK.@timing function calculate_shift(ψ, Hψ, H, Λ, res, shift::RelativeEigsShift2)
+    Nk = size(ψ)[1] 
+    λ_max = [max(real(eigen(Λ[ik]).values)...) for ik = 1:Nk]
+    return [λ_max[ik] * shift.μ * I for ik = 1:Nk]
 end
 
 mutable struct CorrectedRelativeΛShift <: AbstractShiftStrategy   
@@ -135,15 +151,19 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
        DFTK.precondprep!(ea_grad.Pks[ik], ψ[ik]); 
     end
 
+    if ea_grad.naive_formula
+        # Exact formula prone to numerical errors
+        ξ0 = [ψ[ik]/(Λ[ik] - Σ[ik]) for ik = 1:Nk]
+        Hξ0 = [Hψ[ik]/(Λ[ik] - Σ[ik]) for ik = 1:Nk]
+        X = solve_H(H, ψ, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.tol, ea_grad.Pks, ea_grad.h_solver; ξ0, Hξ0)
+        return [ψ[ik] -  X[ik] /(ψ[ik]'X[ik]) for ik = 1:Nk]
+    else
+        # Approximate but numerically stable formula
+        X = solve_H(H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.tol, ea_grad.Pks, ea_grad.h_solver)
 
-    X = solve_H(H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.tol, ea_grad.Pks, ea_grad.h_solver)
-
-    #G1 = [ψ[ik] - (ψ[ik] -X[ik]) /(I - ψ[ik]'X[ik]) for ik = 1:Nk]
-    
-    # Approximate but numerically stable formula
-    Mtx = [ψ[ik]'X[ik] for ik = 1:Nk]
-    G2 = [X[ik] /(I - Mtx[ik]) - ψ[ik] * Mtx[ik] for ik = 1:Nk]
-    return G2
+        Mtx = [ψ[ik]'X[ik] for ik = 1:Nk]
+        return [X[ik] /(I - Mtx[ik]) - ψ[ik] * Mtx[ik] for ik = 1:Nk]
+    end
 end
 
 abstract type AbstractRetraction end 
@@ -214,7 +234,7 @@ default_transport() = DifferentiatedRetractionTransport()
 
 struct DifferentiatedRetractionTransport <: AbstractTransport end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_qr::RetractionQR; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -229,20 +249,24 @@ DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRe
     end
     return [ ψ[ik] * (skew[ik] - Ge[ik])  + Yrf[ik] for ik = 1:Nk]
 end
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::DifferentiatedRetractionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η, τ, ψ_old, ::DifferentiatedRetractionTransport,  
                             ret_pol::RetractionPolar ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
-    Mtx_rhs = [ψ[ik]'ξ[ik]  for ik = 1:Nk]
-    Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
-    DSf = [lyap(ret_pol.Sf[ik], - Mtx_rhs[ik]) for ik = 1:Nk]
+    if is_prev_dir
+        DSf = [τ * ret_pol.Sfinv[ik] * (ξ[ik]'ξ[ik]) for ik = 1:Nk]
+    else
+        Mtx_rhs = [η[ik]'ξ[ik]  for ik = 1:Nk]
+        Mtx_rhs = τ * [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
+        DSf = [lyap(ret_pol.Sf[ik], - Mtx_rhs[ik]) for ik = 1:Nk]
+    end
     return [(ξ[ik] - ψ[ik] * DSf[ik]) * ret_pol.Sfinv[ik] for ik = 1:Nk]
 end
 
 
 struct L2ProjectionTransport <: AbstractTransport end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::L2ProjectionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, ::L2ProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -255,7 +279,7 @@ struct RiemannianProjectionTransport <: AbstractTransport
     Pks_Metric
 end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, riem_proj::RiemannianProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -276,7 +300,7 @@ struct EAProjectionTransport <: AbstractTransport
     ea_grad::EAGradient
 end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ea_proj::EAProjectionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, ea_proj::EAProjectionTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     Nk = size(ψ)[1]
@@ -289,7 +313,7 @@ end
 
 struct InverseRetractionTransport <: AbstractTransport end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionQR ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
@@ -300,7 +324,7 @@ DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractio
     return [- ψ_old[ik] * R_ir[ik] + ψ[ik] for ik = 1:Nk]
 end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::InverseRetractionTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, ::InverseRetractionTransport,  
                             ::RetractionPolar ; 
                             is_prev_dir = true)
     if (!is_prev_dir)
@@ -313,7 +337,7 @@ end
 
 struct NoTransport <: AbstractTransport end
 
-DFTK.@timing function calculate_transport(ψ, ξ, τ, ψ_old, ::NoTransport,  
+DFTK.@timing function calculate_transport(ψ, ξ, η,  τ, ψ_old, ::NoTransport,  
                             ::AbstractRetraction ; 
                             is_prev_dir = true)
     return ξ;
@@ -329,6 +353,27 @@ function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , ::ParamZ
     return 0.0
 end
 
+mutable struct ParamRestart <: AbstractCGParam 
+    cg_param
+    n_restart
+    n_iter 
+    function ParamRestart(cg_param, n_restart)
+        return new(cg_param, n_restart, 0)
+    end
+end
+
+function init_β(gamma, res, grad, param::ParamRestart)
+    init_β(gamma, res, grad, param.cg_param)
+end
+function calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param::ParamRestart)
+    param.n_iter += 1
+    if (param.n_iter % param.n_restart != 0)
+        return calculate_β(gamma, desc_old, res, grad, T_η_old, transport , param.cg_param)
+    else
+        init_β(gamma, res, grad, param.cg_param)
+        return 0.0
+    end
+end
 
 @kwdef mutable struct ParamHS <: AbstractCGParam 
     grad_old = nothing
@@ -709,7 +754,7 @@ function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetract
     Λ_next = 0.5 * [(Λ_next[ik] + Λ_next[ik]') for ik = 1:Nk]
     res_next = [Hψ_next[ik] - ψ_next[ik] * Λ_next[ik] for ik = 1:Nk]
 
-    Tη_next = calculate_transport(ψ_next, η, τ, ψ, transport, retraction; is_prev_dir = true)
+    Tη_next = calculate_transport(ψ_next, η, η, τ, ψ, transport, retraction; is_prev_dir = true)
 
     (; ψ_next, ρ_next, energies_next, H_next, Hψ_next, Λ_next, res_next, Tη_next, τ)
 end

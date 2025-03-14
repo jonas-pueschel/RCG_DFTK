@@ -15,10 +15,9 @@ include("./rcg.jl")
 include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
-#model, basis = silicon_setup(;Ecut = 40, kgrid = [3,3,3], supercell_size = [1,1,1]);
-model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [2,2,2]);
+#model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [1,1,1]);
 #model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
-#model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
+model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
 
 # Convergence we desire in the residual
 tol = 1e-8;
@@ -41,13 +40,15 @@ shift = CorrectedRelativeΛShift(; μ = 0.01)
 gradient = EAGradient(basis, shift; 
         tol = 2.5e-2,
         itmax = 10,
-        h_solver = GlobalOptimalHSolver(),
-        Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
+        h_solver = GlobalOptimalHSolver(;solve_horizontal = false),
+        Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints],
+        naive_formula = true
         ) 
 
 backtracking = AdaptiveBacktracking(
         ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
-        ExactHessianStep(basis), 10);
+        ConstantStep(1.0), 
+        10);
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = riemannian_conjugate_gradient(basis; 
@@ -55,6 +56,34 @@ scfres_rcg1 = riemannian_conjugate_gradient(basis;
         tol, maxiter = 100, 
         cg_param = ParamFR_PRP(),
         callback = callback_earcg, is_converged = is_converged,
+        gradient = gradient, iteration_strat = backtracking);
+println(DFTK.timer)
+
+#EARG
+println("EARG")
+callback_earg = ResidualEvalCallback(;defaultCallback, method = EvalRCG())
+is_converged = ResidualEvalConverged(tol, callback_earg)
+
+shift = CorrectedRelativeΛShift(; μ = 0.01)
+
+gradient = EAGradient(basis, shift; 
+        tol = 2.5e-2,
+        itmax = 10,
+        h_solver = GlobalOptimalHSolver(;solve_horizontal = false),
+        Pks = [PreconditionerTPA(basis, kpt) for kpt in basis.kpoints],
+        naive_formula = true
+        ) 
+
+stepsize = BarzilaiBorweinStep(0.1, 2.5, ConstantStep(1.0));
+backtracking = StandardBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), stepsize, 10)
+cg_param = ParamZero();
+
+DFTK.reset_timer!(DFTK.timer)
+scfres_rg1 = riemannian_conjugate_gradient(basis; 
+        ψ = ψ1, ρ = ρ1,
+        tol, maxiter = 100, 
+        cg_param,
+        callback = callback_earg, is_converged = is_converged,
         gradient = gradient, iteration_strat = backtracking);
 println(DFTK.timer)
 
@@ -95,7 +124,7 @@ backtracking = StandardBacktracking(
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg2 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
-        tol, maxiter = 200, 
+        tol, maxiter = 1000, 
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         callback = callback_l2rcg, is_converged = is_converged,
@@ -117,6 +146,7 @@ scfres_scf = self_consistent_field(basis; tol,
 println(DFTK.timer)
 
 #PDCM
+println("LBFGS")
 callback_pdcm = ResidualEvalCallback(;defaultCallback, method = EvalPDCM())
 is_converged = ResidualEvalConverged(tol, callback_pdcm)
 
@@ -130,6 +160,13 @@ println(DFTK.timer)
 #methods:  LBFGS, GradientDescent, ConjugateGradient
 
 plot_callbacks(
-        [callback_scf, callback_l2rcg, callback_pdcm, callback_earcg],
-        ["SCF", "L2RCG", "PDCM", "EARCG"], 
+        [callback_scf, callback_l2rcg, callback_pdcm, callback_earcg, callback_earg],
+        ["SCF", "L2RCG", "PDCM", "EARCG", "EARGD"], 
         ψ1, basis)
+
+# p = 16
+# homo = [eigenvalues_k[p] for eigenvalues_k = scfres_scf.eigenvalues]
+# lumo = [eigenvalues_k[p+1] for eigenvalues_k = scfres_scf.eigenvalues]
+
+# gap = min(lumo...) - max(homo...) 
+# gap_p = min([eigenvalues_k[p+1] - eigenvalues_k[p] for eigenvalues_k = scfres_scf.eigenvalues]...)

@@ -1,5 +1,6 @@
 using DFTK
 using LinearMaps
+using LinearAlgebra
 using IterativeSolvers
 
 include("./rcg_params.jl")
@@ -19,8 +20,8 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
                 iteration_strat = AdaptiveBacktracking(
-                    ModifiedSecantRule(0.05, 0.1, 0.5),
-                    ExactHessianStep(basis), 10),
+                    ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
+                    ConstantStep(1.0), 10),
                 ) where {T}
     start_ns = time_ns()
     # setting parameters
@@ -63,11 +64,6 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik = 1:Nk]
     res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik = 1:Nk]
 
-    #initial callback
-    info = (; ham=H, ψ,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=nothing, ρout=ρ, n_iter,
-    energies, algorithm="RCG")
-    #callback(info)
-
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
   
@@ -75,6 +71,11 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     gamma = [real(dot(res[ik],grad[ik])) for ik = 1:Nk]
     desc = - gamma
     η = - grad
+
+    #initial callback
+    info = (; ham=H, ψ, grad, η,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=nothing, ρout=ρ, n_iter,
+    energies, algorithm="RCG")
+    #callback(info)
 
 
     # give β the information from first iteration
@@ -101,15 +102,13 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         res = next.res_next
 
 
-        info = (; ham=H, ψ,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
-        energies, start_ns, algorithm="RCG")
+        # info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+        # energies, start_ns, algorithm="RCG")
 
-        callback(info)
-
-        # callback and test convergence
-        if is_converged(info)
-            break
-        end
+        # # test convergence before expensive gradient caluclation, info contains old grad, η!
+        # if is_converged(info)
+        #     break
+        # end
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
@@ -119,16 +118,25 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         if (!isnothing(next.Tη_next))
             T_η_old = next.Tη_next
         else
-            T_η_old = calculate_transport(ψ, η, τ, ψ_old, transport_η, retraction; is_prev_dir = true)
+            T_η_old = calculate_transport(ψ, η, η, τ, ψ_old, transport_η, retraction; is_prev_dir = true)
         end
         # give transport rule for grad (only used if necessary for β)
-        transport(ξ) = calculate_transport(ψ, ξ, τ, ψ_old, transport_grad, retraction; is_prev_dir = false)
+        transport(ξ) = calculate_transport(ψ, ξ, η,  τ, ψ_old, transport_grad, retraction; is_prev_dir = false)
 
         # calculate the cg param, note that desc is the descent from the *last* iteration
         β = calculate_β(gamma, desc, res, grad, T_η_old, transport , cg_param)
 
         # calculate new direction
         η = -grad + β .* T_η_old
+
+        # update info and callback
+        info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+        energies, start_ns, algorithm="RCG")
+        callback(info)
+        #check convergence
+        if is_converged(info)
+            break
+        end
 
         #check if η is a descent direction. If not, restart
         desc = [dot(η[ik],res[ik]) for ik in 1:Nk]
@@ -155,7 +163,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     # λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
     # println(λ_min)
 
-    info = (; ham=H, ψ, basis, energies, converged = is_converged(info) , norm_res = norm(res), ρ, eigenvalues, occupation, εF, n_iter,
+    info = (; ham=H, ψ, grad, η, basis, energies, converged = is_converged(info) , norm_res = norm(res), ρ, eigenvalues, occupation, εF, n_iter,
             stage=:finalize, runtime_ns = time_ns() - start_ns, start_ns,algorithm="RCG", )
     callback(info)
 
