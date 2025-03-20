@@ -1,10 +1,11 @@
-The Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem, Implemented using DFTK.jl. 
+The Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem, implemented using DFTK.jl. 
 
 # Getting started
 
-Testing the parallel RCG in DFTK is straight forward:
+In order to generate the plots from the paper,
 
-    1. Add dependencies listet in the Manifest
-    2. Run test_molecule.jl
-    
+    1. choose the respective model, basis in test_molecule.jl,
+    2. run test_molecule.jl.
+
+The convergence plots will be displayed after all methods converged.
 This readme is a bit short and will be extended in the future.
