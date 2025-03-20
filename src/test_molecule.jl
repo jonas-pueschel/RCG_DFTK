@@ -9,19 +9,17 @@ using DFTK
 using LinearAlgebra
 using Krylov
 using Plots
-using BSON
 
 include("./rcg.jl")
 include("./setups/all_setups.jl")
 include("./rcg_benchmarking.jl")
 
-#model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [1,1,1]);
+model, basis = silicon_setup(;Ecut = 50, kgrid = [6,6,6], supercell_size = [1,1,1]);
 #model, basis = GaAs_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
-model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
+#model, basis = TiO2_setup(;Ecut = 60, kgrid = [2,2,2], supercell_size = [1,1,1]);
 
 # Convergence we desire in the residual
 tol = 1e-8;
-
 
 #Initial value
 scfres_start = self_consistent_field(basis; tol = 0.5e-1,  nbandsalg = DFTK.FixedBands(model));
@@ -117,14 +115,11 @@ gradient = L2Gradient()
 backtracking = StandardBacktracking(
         ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
         ApproxHessianStep(), 10);
-# backtracking = AdaptiveBacktracking(
-#         ModifiedSecantRule(0.01, 0.9, 1e-12, 0.5),
-#         ExactHessianStep(basis), 10);
 
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg2 = riemannian_conjugate_gradient(basis; 
         ψ = ψ1, ρ = ρ1,
-        tol, maxiter = 1000, 
+        tol, maxiter = 100, 
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         callback = callback_l2rcg, is_converged = is_converged,
@@ -164,9 +159,3 @@ plot_callbacks(
         ["SCF", "L2RCG", "PDCM", "EARCG", "EARGD"], 
         ψ1, basis)
 
-# p = 16
-# homo = [eigenvalues_k[p] for eigenvalues_k = scfres_scf.eigenvalues]
-# lumo = [eigenvalues_k[p+1] for eigenvalues_k = scfres_scf.eigenvalues]
-
-# gap = min(lumo...) - max(homo...) 
-# gap_p = min([eigenvalues_k[p+1] - eigenvalues_k[p] for eigenvalues_k = scfres_scf.eigenvalues]...)

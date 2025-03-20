@@ -19,6 +19,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
                 cg_param = ParamFR_PRP(),
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
+                check_convergence_early = true, #check convergence before expensive gradient calculation       
                 iteration_strat = AdaptiveBacktracking(
                     ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
                     ConstantStep(1.0), 10),
@@ -101,14 +102,15 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         Λ = next.Λ_next
         res = next.res_next
 
-
-        # info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
-        # energies, start_ns, algorithm="RCG")
-
-        # # test convergence before expensive gradient caluclation, info contains old grad, η!
-        # if is_converged(info)
-        #     break
-        # end
+        # test convergence before expensive gradient caluclation, note that info contains old grad, η!
+        if check_convergence_early
+            info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+            energies, start_ns, algorithm="RCG")
+            callback(info)
+            if is_converged(info)
+                break
+            end
+        end
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
@@ -129,13 +131,16 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         # calculate new direction
         η = -grad + β .* T_η_old
 
-        # update info and callback
-        info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
-        energies, start_ns, algorithm="RCG")
-        callback(info)
+
         #check convergence
-        if is_converged(info)
-            break
+        if !check_convergence_early
+            # update info and callback
+            info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+            energies, start_ns, algorithm="RCG")
+            callback(info)
+            if is_converged(info)
+                break
+            end
         end
 
         #check if η is a descent direction. If not, restart
