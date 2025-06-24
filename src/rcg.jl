@@ -19,7 +19,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
                 cg_param = ParamFR_PRP(),
                 transport_η = DifferentiatedRetractionTransport(),
                 transport_grad = DifferentiatedRetractionTransport(),
-                check_convergence_early = true, #check convergence before expensive gradient calculation       
+                check_convergence_early = false, #check convergence before expensive gradient calculation       
                 iteration_strat = AdaptiveBacktracking(
                     ModifiedSecantRule(0.05, 0.1, 1e-12, 0.5),
                     ConstantStep(1.0), 10),
@@ -69,15 +69,16 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
   
     T_η_old = nothing
-    gamma = [real(dot(res[ik],grad[ik])) for ik = 1:Nk]
+    gamma = inner_product_DFTK(basis, res, grad) 
     desc = - gamma
     η = - grad
 
     #initial callback
-    info = (; ham=H, ψ, grad, η,basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=nothing, ρout=ρ, n_iter,
+    info = (; ham=H, ψ, grad, res, η,basis, converged = false, stage=:iterate, norm_res = sqrt(inner_product_DFTK(basis,res, res)), norm_grad = sqrt(inner_product_DFTK(basis, res, grad)), ρin=nothing, ρout=ρ, n_iter,
     energies, algorithm="RCG")
     #callback(info)
 
+    τ = nothing
 
     # give β the information from first iteration
     init_β(gamma, res, grad, cg_param)
@@ -88,7 +89,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
 
         #perform step
         get_next(τ_trial) =  get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η)
-        next = do_step(ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, iteration_strat)
+        next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, iteration_strat)
 
         #update orbitals, density, H and energies
         ψ_old = ψ
@@ -104,7 +105,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
 
         # test convergence before expensive gradient caluclation, note that info contains old grad, η!
         if check_convergence_early
-            info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+            info = (; ham=H, ψ, grad, res, η, τ, basis, converged = false, stage=:iterate, norm_res = sqrt(inner_product_DFTK(basis,res, res)), norm_grad = nothing, ρin=ρ_prev, ρout=ρ, n_iter,
             energies, start_ns, algorithm="RCG")
             callback(info)
             if is_converged(info)
@@ -114,7 +115,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
-        gamma = [real(dot(res[ik],grad[ik])) for ik = 1:Nk]
+        gamma = inner_product_DFTK(basis, res, grad)
 
         # calculate transport of η
         if (!isnothing(next.Tη_next))
@@ -126,16 +127,16 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         transport(ξ) = calculate_transport(ψ, ξ, η,  τ, ψ_old, transport_grad, retraction; is_prev_dir = false)
 
         # calculate the cg param, note that desc is the descent from the *last* iteration
-        β = calculate_β(gamma, desc, res, grad, T_η_old, transport , cg_param)
+        β = calculate_β(basis, gamma, desc, res, grad, T_η_old, transport , cg_param)
 
         # calculate new direction
-        η = -grad + β .* T_η_old
+        η = -grad + T_η_old .* β
 
 
         #check convergence
         if !check_convergence_early
             # update info and callback
-            info = (; ham=H, ψ, grad, η, basis, converged = false, stage=:iterate, norm_res = norm(res), ρin=ρ_prev, ρout=ρ, n_iter,
+            info = (; ham=H, ψ, grad, res, η, τ, basis, converged = false, stage=:iterate, norm_res = norm(res), norm_grad = sqrt(inner_product_DFTK(basis, res, grad)), ρin=ρ_prev, ρout=ρ, n_iter,
             energies, start_ns, algorithm="RCG")
             callback(info)
             if is_converged(info)
@@ -144,8 +145,8 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
         end
 
         #check if η is a descent direction. If not, restart
-        desc = [dot(η[ik],res[ik]) for ik in 1:Nk]
-        if (real(sum(desc)) >= 0)
+        desc = inner_product_DFTK(basis, η, res) 
+        if (desc >= 0)
             @warn "the search direction is not a descent direction, try to use a better initial guess"
         end
     end
@@ -168,7 +169,7 @@ DFTK.@timing function riemannian_conjugate_gradient(basis::PlaneWaveBasis{T};
     # λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
     # println(λ_min)
 
-    info = (; ham=H, ψ, grad, η, basis, energies, converged = is_converged(info) , norm_res = norm(res), ρ, eigenvalues, occupation, εF, n_iter,
+    info = (; ham=H, ψ, grad, res, η, τ, basis, energies, converged = is_converged(info) , norm_res = norm(res), norm_grad = sqrt(inner_product_DFTK(basis, res, grad)), ρ, eigenvalues, occupation, εF, n_iter,
             stage=:finalize, runtime_ns = time_ns() - start_ns, start_ns,algorithm="RCG", )
     callback(info)
 

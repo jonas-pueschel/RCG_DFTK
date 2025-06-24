@@ -7,7 +7,7 @@ Default callback function for `Riemannian conjugate gradient`, which prints a co
 """
 
 
-function RcgDefaultCallback(; show_time=true)
+function RcgDefaultCallback(; show_time=true, show_grad_norm = false)
     prev_time   = nothing
     prev_energy = NaN
     function callback(info)
@@ -21,9 +21,13 @@ function RcgDefaultCallback(; show_time=true)
 
         # TODO We should really do this properly ... this is really messy
         if info.n_iter == 1
-            println("n     Energy            log10(|res|)   log10(ΔE)   log10(Δρ)   Δtime     calls_ham")
-            println("---   ---------------   ------------   ---------   ---------   -----     ---------")
-
+            if (show_grad_norm)
+                println("n     Energy            log10(|R|)    log10(|G|g)   log10(ΔE)   log10(Δρ)   Δtime     calls_ham")
+                println("---   ---------------   ----------    -----------   ---------   ---------   -----     ---------")
+            else
+                println("n     Energy            log10(|R|)    log10(ΔE)   log10(Δρ)   Δtime     calls_ham")
+                println("---   ---------------   ----------    ---------   ---------   -----     ---------")
+            end
         end
         E    = isnothing(info.energies) ? Inf : info.energies.total
         Δρ   = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(info.basis.dvol)
@@ -47,9 +51,15 @@ function RcgDefaultCallback(; show_time=true)
         Δρstr   = isnothing(Δρ) ? " "^9 : " " * format_log8(Δρ)
 
         if (haskey(info, :norm_res) )
-            resstr = !isnothing(info.norm_res) ? " " * (@sprintf "%8.2f" log10(abs(info.norm_res))) : " "^9
+            resstr = !isnothing(info.norm_res) ? " " * (@sprintf "%8.2f" log10(info.norm_res)) : " "^9
         else
             resstr = " "^9
+        end
+
+        if (show_grad_norm)
+            gradstr = !isnothing(info.norm_grad) ? " " * (@sprintf "%8.2f" log10(info.norm_grad)) : " "^9
+        else
+            gradstr = ""
         end
 
         if (haskey(info, :calls_ham) )
@@ -58,7 +68,7 @@ function RcgDefaultCallback(; show_time=true)
             calls_hamstr = " "^9
         end
 
-        @printf "% 3d   %s   %s   %s   %s   %s   %s" info.n_iter Estr resstr ΔE Δρstr tstr calls_hamstr
+        @printf "% 3d   %s   %s   %s   %s   %s   %s   %s" info.n_iter Estr resstr gradstr ΔE Δρstr tstr calls_hamstr
         println()
         prev_energy = info.energies.total
         prev_time = time_ns()
@@ -70,4 +80,8 @@ end
 
 function RcgConvergenceResidual(tolerance)
     info -> (info.norm_res < tolerance)
+end
+
+function RcgConvergenceGradient(tolerance)
+    info -> (info.norm_grad < tolerance)
 end
