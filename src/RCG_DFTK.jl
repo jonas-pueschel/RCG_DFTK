@@ -19,6 +19,7 @@ include("rcg_benchmarking.jl")
 
 export riemannian_conjugate_gradient,
     h1_riemannian_conjugate_gradient,
+    h1_riemannian_gradient,
     energy_adaptive_riemannian_conjugate_gradient,
     energy_adaptive_riemannian_gradient
 export AbstractShiftStrategy,

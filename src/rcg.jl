@@ -217,7 +217,6 @@ function energy_adaptive_riemannian_gradient(
         inner_tol = 5.0e-2,
         h_solver = GlobalOptimalHSolver(),
         retraction = RetractionPolar(),
-        cg_param = ParamZero(),
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
@@ -226,7 +225,7 @@ function energy_adaptive_riemannian_gradient(
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,
         gradient = EAGradient(basis, shift; itmax = inner_itmax, tol = inner_tol, h_solver),
-        retraction, cg_param, transport_η, transport_grad, check_convergence_early, iteration_strat
+        retraction, cg_param = ParamZero(), transport_η, transport_grad, check_convergence_early, iteration_strat
     )
 end
 
@@ -252,4 +251,24 @@ function h1_riemannian_conjugate_gradient(
         gradient = H1Gradient(basis),
         retraction, cg_param, transport_η, transport_grad, check_convergence_early, iteration_strat
     )
+end
+
+function h1_riemannian_gradient(
+    basis::PlaneWaveBasis{T};
+    ρ = guess_density(basis),
+    ψ = nothing,
+    tol = 1.0e-6, maxiter = 500,
+    callback = RcgDefaultCallback(),
+    is_converged = RcgConvergenceResidual(tol),
+    retraction = RetractionPolar(),
+    transport_η = DifferentiatedRetractionTransport(),
+    transport_grad = DifferentiatedRetractionTransport(),
+    check_convergence_early = true, #check convergence before expensive gradient calculation
+    iteration_strat = StandardBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), BarzilaiBorweinStep(0.1, 2.5, ConstantStep(1.0)), 10)
+) where {T}
+return riemannian_conjugate_gradient(
+    basis; ρ, ψ, tol, maxiter, callback, is_converged,
+    gradient = H1Gradient(basis),
+    retraction, cg_param = ParamZero(), transport_η, transport_grad, check_convergence_early, iteration_strat
+)
 end

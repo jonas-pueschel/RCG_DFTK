@@ -219,7 +219,7 @@ DFTK.@timing function calculate_retraction(ψ, η, τ, ret_pol::RetractionPolar)
         φk = φ[ik]
         S = φk'φk
         s, U = eigen(S)
-        Σ = broadcast(x -> sqrt(x), s)
+        Σ = broadcast(x -> sqrt(abs(x)), s)
         Σ_inv = broadcast(x -> 1.0 / x, Σ)
         Sfinv_k = U * Diagonal(Σ_inv) * U'
         Qk = φk * Sfinv_k
@@ -594,12 +594,15 @@ end
 
 abstract type AbstractBacktrackingRule end
 
-@kwdef mutable struct NonmonotoneRule <: AbstractBacktrackingRule
+mutable struct NonmonotoneRule <: AbstractBacktrackingRule
     const α::Float64
     const β::Float64
     const δ::Float64
-    q::Float64 = 1.0
-    c::Float64 = NaN
+    q::Float64
+    c::Float64
+    function NonmonotoneRule(α, β, δ)
+        return new(α, β, δ, 1.0, NaN)
+    end
 end
 
 function check_rule(basis, E_current, desc_current, next, rule::NonmonotoneRule)

@@ -24,9 +24,9 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             println("---   ---------------   ---------$grad_line   ----------   ---------   -------   ---------")
         end
         E = isnothing(info.energies) ? Inf : info.energies.total
-        Δρ = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(info.basis.dvol)
+        Δρ = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(abs(info.basis.dvol))
 
-        tstr = " "^9
+        tstr = " "^7
         if show_time && !isnothing(prev_time)
             tstr = @sprintf " %6s" TimerOutputs.prettytime(time_ns() - prev_time)
         end
@@ -35,9 +35,9 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
 
         Estr = (@sprintf "%+15.12f" round(E, sigdigits = 13))[1:15]
         if isnan(prev_energy)
-            ΔE = " "^9
+            ΔE = " "^10
         else
-            sign = E < prev_energy ? " " : "+"
+            sign = E < prev_energy ? "  " : "+ "
             ΔE = sign * format_log8(E - prev_energy)
         end
 
@@ -51,7 +51,7 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
         end
 
         if (show_grad_norm)
-            gradstr = !isnothing(info.norm_grad) ? " " * (format_log8(info.norm_grad)) : " "^9
+            gradstr = "   " * !isnothing(info.norm_grad) ? " " * (format_log8(info.norm_grad)) : " "^9
         else
             gradstr = ""
         end
@@ -62,7 +62,7 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             calls_hamstr = " "^9
         end
 
-        @printf "% 3d   %s   %s   %s   %s   %s   %s   %s" info.n_iter Estr resstr gradstr ΔE Δρstr tstr calls_hamstr
+        @printf "% 3d   %s   %s%s   %s   %s   %s   %s" info.n_iter Estr resstr gradstr ΔE Δρstr tstr calls_hamstr
         println()
         prev_energy = info.energies.total
         prev_time = time_ns()

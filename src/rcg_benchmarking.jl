@@ -117,11 +117,11 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
 
 
     rcg_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["inner_timers"]
-    calls_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local+kinetic"], "n_calls") +
-        get_key_chain_value(rcg_timer, ["solve_H", "DftHamiltonian multiplication", "local+kinetic"], "n_calls")
+    calls_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local"], "n_calls") +
+        get_key_chain_value(rcg_timer, ["solve_H", "DftHamiltonian multiplication", "local"], "n_calls")
 
     calls_energy_hamiltonian = get_key_chain_value(rcg_timer, ["energy_hamiltonian"], "n_calls")
     + get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "energy_hamiltonian"], "n_calls")
@@ -133,10 +133,10 @@ function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
     return push!(callback.calls_DftHamiltonian, calls_DftHamiltonian)
 
     #total_time_ns
-    # callback.time_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
-    #     get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
-    #     get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns") +
-    #     get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns")
+    # callback.time_DftHamiltonian = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local"], "total_time_ns") +
+    #     get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local"], "total_time_ns") +
+    #     get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local"], "total_time_ns") +
+    #     get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local"], "total_time_ns")
     # callback.time_energy_hamiltonian = get_key_chain_value(rcg_timer, ["energy_hamiltonian"], "total_time_ns")
     #     + get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg","energy_hamiltonian"], "total_time_ns")
     # callback.time_compute_density = get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "compute_density"], "total_time_ns")
@@ -156,9 +156,9 @@ function update_callback(callback::ResidualEvalCallback, ::EvalSCF)
 
     scf_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["self_consistent_field"]["inner_timers"]
     #TODO somehow determine the eigen function?
-    #temp = haskey(scf_timer, "local+kinetic") ? scf_timer["local+kinetic"]["n_calls"] : 0
+    #temp = haskey(scf_timer, "local") ? scf_timer["local"]["n_calls"] : 0
     temp = 0
-    calls_DftHamiltonian = get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication", "local+kinetic"], "n_calls")
+    calls_DftHamiltonian = get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication", "local"], "n_calls")
     + temp
     calls_energy_hamiltonian = get_key_chain_value(scf_timer, ["energy_hamiltonian"], "n_calls")
     calls_compute_density = get_key_chain_value(scf_timer, ["compute_density"], "n_calls")
@@ -173,7 +173,7 @@ function update_callback(callback::ResidualEvalCallback, ::EvalSCF)
     push!(callback.calls_energy_hamiltonian, calls_energy_hamiltonian)
     return push!(callback.calls_DftHamiltonian, calls_DftHamiltonian)
 
-    # callback.time_DftHamiltonian = get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication", "local+kinetic"], "total_time_ns")
+    # callback.time_DftHamiltonian = get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication", "local"], "total_time_ns")
     # callback.time_energy_hamiltonian = get_key_chain_value( scf_timer, ["energy_hamiltonian"],"total_time_ns");
     # callback.time_compute_density = get_key_chain_value( scf_timer, ["energy_hamiltonian"],"total_time_ns");
     # callback.time_apply_K =  0.0;
@@ -195,8 +195,8 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     push!(callback.times_tot, time_tot_ns)
 
     dcm_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"] #["direct_minimization"]["inner_timers"]
-    calls_DftHamiltonian = get_key_chain_value(dcm_timer, ["DftHamiltonian multiplication", "local+kinetic"], "n_calls")
-    #calls_DftHamiltonian += haskey(dcm_timer, "local+kinetic") ? dcm_timer["local+kinetic"]["n_calls"] : 0;
+    calls_DftHamiltonian = get_key_chain_value(dcm_timer, ["DftHamiltonian multiplication", "local"], "n_calls")
+    #calls_DftHamiltonian += haskey(dcm_timer, "local") ? dcm_timer["local"]["n_calls"] : 0;
     calls_energy_hamiltonian = get_key_chain_value(dcm_timer, ["energy_hamiltonian"], "n_calls")
     calls_compute_density = get_key_chain_value(dcm_timer, ["compute_density"], "n_calls")
     calls_apply_K = 0
