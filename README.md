@@ -17,13 +17,12 @@ variants of the first with a respective selection of the parameters. They can be
 
 ## Example
 
-A brief example on the usage of methods from this package. We emphasise that energy-adaptive methods usually need an initial guess that is close to the ground state in order to converge, while H1-RCG will usually show global convergence. As a trade-off, energy-adaptive methods generally converge faster locally with respect to runtime.
+A brief example on the usage of methods from this package, it can also be found in `experiments/simple_test.jl`. We emphasise that energy-adaptive methods usually need an initial guess that is close to the ground state in order to converge, while H1-RCG will usually show global convergence. As a trade-off, energy-adaptive methods generally converge faster locally with respect to runtime.
 
 ```julia
 using DFTK
 using RCG_DFTK
-using LineSearches
-
+using PseudoPotentialData
 
 # Silicon lattice constant in Bohr
 a = 10.26
@@ -34,22 +33,22 @@ Si = ElementPsp(:Si; psp=load_psp(PseudoFamily("cp2k.nc.sr.lda.v0_1.semicore.gth
 atoms     = [Si, Si]
 positions = [ones(3)/8, -ones(3)/8]
 model = model_LDA(lattice, atoms, positions)
-basis = PlaneWaveBasis(model; Ecut=20, [2, 2, 2])
+basis = PlaneWaveBasis(model; Ecut = 20, kgrid = [2, 2, 2])
 
 # Convergence tolerance
 tol = 1e-8;
 
-#Initial value
+# Initial value
 scfres_start = self_consistent_field(basis; tol = 0.5e-1,  nbandsalg = DFTK.FixedBands(model));
 ψ1 = DFTK.select_occupied_orbitals(basis, scfres_start.ψ, scfres_start.occupation).ψ;
 ρ1 = scfres_start.ρ;
 
-#EARCG
+# EARCG
 scfres_rcg1 = energy_adaptive_riemannian_conjugate_gradient(basis; ψ = ψ1, ρ = ρ1, tol);
 
-#H1RCG
+# H1RCG
 scfres_rcg2 = h1_riemannian_conjugate_gradient(basis; ψ = ψ1, ρ = ρ1, tol);
 
-#SCG
+# SCF
 scfres_scf = self_consistent_field(basis; ψ = ψ1, ρ = ρ1, tol);
 ```
