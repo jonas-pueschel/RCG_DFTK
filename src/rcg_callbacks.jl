@@ -51,7 +51,7 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
         end
 
         if (show_grad_norm)
-            gradstr = "   " * !isnothing(info.norm_grad) ? " " * (format_log8(info.norm_grad)) : " "^9
+            gradstr = "   " * (!isnothing(info.norm_grad) ? " " * (format_log8(info.norm_grad)) : " "^9)
         else
             gradstr = ""
         end

@@ -1,4 +1,5 @@
 #TODO: implement initial guess
+using Krylov
 
 abstract type AbstractHSolver end
 
