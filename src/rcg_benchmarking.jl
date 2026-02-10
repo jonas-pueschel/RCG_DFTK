@@ -76,7 +76,7 @@ function (callback::ResidualEvalCallback)(info)
         callback.defaultCallback(info_temp)
     end
 
-    # update n_iter and re-enable timer
+    # re-enable timer
 
     return enable_timer!(DFTK.timer)
 end
