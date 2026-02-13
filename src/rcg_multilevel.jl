@@ -71,43 +71,71 @@ function π_St(x)
 end
 
 
-function proj_TSt(ψ, v)
-    Nk = size(ψ)[1]
-    G = [ψ[ik]'v[ik] for ik = 1:Nk]
+function proj_TSt(φ, v)
+    Nk = size(φ)[1]
+    G = [φ[ik]'v[ik] for ik = 1:Nk]
     G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
-    return [v[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
+    return [v[ik] - φ[ik] * G[ik] for ik = 1:Nk]
 end
 
 
 function point_reduce(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ) where {T}
-
+    y = interpolate_f2c(basis_c, basis_f, ψ)
+    ϕ, ~, ~ = π_St(y)
+    return ϕ
 end
 
 function point_prolongate(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ϕ) where {T}
-
+    y = interpolate_c2f(basis_c, basis_f, ϕ)
+    ψ, ~, ~ = π_St(y)
+    return ψ
 end
 
-function invRet(p,q)
-    
+function invRet(φ,z)
+    Nk = size(p)[1]
+    Mtx_rhs = [2 * I(size(p[ik])[2]) for ik = 1:Nk]
+    Mtx_lhs = [φ[ik]'z[ik] for ik = 1:Nk]
+    Yz = [lyap(Mtx_lhs[ik], -Mtx_rhs[ik]) for ik = 1:Nk] 
+    return [z[ik] * Yz[ik] - φ[ik] for ik = 1:Nk], Yz
 end
 
-function DinvRet(p,q,v; iR = nothing)
-    
+function DinvRet(φ,z,u; Yz = nothing)
+    Mtx_lhs = [φ[ik]'z[ik] for ik = 1:Nk]
+    if (isnothing(Yz))
+        Mtx_rhs_z = [2 * I(size(p[ik])[2]) for ik = 1:Nk]
+        Yz = [lyap(Mtx_lhs[ik], -Mtx_rhs_z[ik]) for ik = 1:Nk] 
+    end
+    Mtx_rhs_u = [φ[ik]'u[ik] * Yz[ik] for ik = 1:Nk]
+    Mtx_rhs_u = [M + M' for M = Mtx_rhs_u]
+    Yu = [lyap(Mtx_lhs[ik], -Mtx_rhs_u[ik]) for ik = 1:Nk] 
+    return [z[ik] * Yu[ik] + u[ik] * Yz[ik] for ik = 1:Nk]
 end
 
 
 
-mutable struct CoarseObjective
-    basis
-    res0
-    ϕ0
+mutable struct CoarseGridCostResidual <: AbstractCostResidual
+    wk
+    ϕk
 end
 
-function get_cost(c0::CoarseObjective, ϕ)
-    
+function initialize_cost_residual(H , ψ, e_tot, basis, cgcr::CoarseGridCostResidual)
+    Nk = size(ψ)[1]
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return Hψ, Λ, res, e_tot
 end
 
-function get_residual(c0::CoarseObjective, ϕ)
-    
-end
+function calculate_cost_residual(H , ψ, e_tot, basis, cgcr::CoarseGridCostResidual)
+    Nk = size(ψ)[1]
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
 
+
+
+    return Hψ, Λ, res, e_tot
+end

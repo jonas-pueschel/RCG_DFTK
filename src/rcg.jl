@@ -7,6 +7,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.01)),
+        cost_resiudal = StandardCostResiudal(),
         retraction = RetractionPolar(),
         cg_param = ParamFR_PRP(),
         transport_η = DifferentiatedRetractionTransport(),
@@ -53,10 +54,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
 
     # compute first residual
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+    Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_resiudal)
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
@@ -69,7 +67,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     #initial callback
     info = (;
         ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
-        energies, algorithm = "RCG",
+        energies, cost, algorithm = "RCG",
     )
     #callback(info)
 
@@ -83,8 +81,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         n_iter += 1
 
         #perform step
-        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η)
-        next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, iteration_strat)
+        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η, cost_resiudal)
+        next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, iteration_strat)
 
         #update orbitals, density, H and energies
         ψ_old = ψ
@@ -94,6 +92,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         H = next.H_next
         τ = next.τ
         energies = next.energies_next
+        cost = next.cost_next
         Hψ = next.Hψ_next
         Λ = next.Λ_next
         res = next.res_next
@@ -102,7 +101,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         if check_convergence_early
             info = (;
                 ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, start_ns, algorithm = "RCG",
+                energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
             if is_converged(info)
@@ -135,7 +134,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
             # update info and callback
             info = (;
                 ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, start_ns, algorithm = "RCG",
+                energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
             if is_converged(info)
@@ -169,7 +168,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     # println(λ_min)
 
     info = (;
-        ham = H, ψ, grad, res, η, τ, basis, energies, converged = is_converged(info), norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
+        ham = H, ψ, grad, res, η, τ, basis, energies, cost, converged = is_converged(info), norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
         stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG",
     )
     callback(info)

@@ -35,7 +35,6 @@ DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = energy_adaptive_riemannian_conjugate_gradient(basis; ψ = ψ1, ρ = ρ1, μ = 0, tol, 
                                                             callback = callback_earcg);
 println("Time_tot (s): $((callback_earcg.times_tot[end])/ 1e9)")
-println("Hamiltonians: $((callback_earcg))")
 
 # H1RCG
 println("\nH1RCG")

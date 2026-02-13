@@ -20,10 +20,10 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             prev_energy = NaN
             grad_head = show_grad_norm ? "   log10|G| " : ""
             grad_line = show_grad_norm ? "   ---------" : ""
-            println("n     Energy            log10|R| $grad_head   log10(ΔE)    log10(Δρ)   Δtime     calls_ham")
+            println("n     Cost              log10|R| $grad_head   log10(ΔE)    log10(Δρ)   Δtime     calls_ham")
             println("---   ---------------   ---------$grad_line   ----------   ---------   -------   ---------")
         end
-        E = isnothing(info.energies) ? Inf : info.energies.total
+        E = isnothing(info.cost) ? Inf : info.cost
         Δρ = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(abs(info.basis.dvol))
 
         tstr = " "^7
