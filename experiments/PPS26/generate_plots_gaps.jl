@@ -1,5 +1,8 @@
 using RCG_DFTK
 using DFTK
+using Statistics
+using Plots
+
 include("calc_gaps.jl")
 include("test_gaps.jl")
 
@@ -8,11 +11,11 @@ include("test_gaps.jl")
 include("../precompile_methods.jl")
 precompile_methods()
 
-# range of a
 as = 10:0.1:11.4
+n_examples = 10
+method_names = ["EARCG-St", "EARCG-Gr", "H1RCG", "L2RCG", "SCF"]
+save_mode = "png" #"latex"
 
-# how many runs per a
-n_examples = 1
 
 function generate_table(xs, ys)
     st = "\\\\"
@@ -60,7 +63,7 @@ function fill_template(xss,ys,position)
 
     colors = position == 1 ? ["cpl1", "cpl2", "cpl3"] : ["unia-purple", "cpl1", "cpl2", "cpl3", "cpl4"]
 
-    labels = position == 1 ?  ["HOMO-LUMO gap", "eff. gap", "virt. gap"] :  ["EARCG-St", "EARCG-Gr", "H1RCG", "L2RCG", "SCF"]
+    labels = position == 1 ?  ["HOMO-LUMO gap", "eff. gap", "virt. gap"] :  method_names
 
     legend_st1 = position == 2 ? "" : generate_legend(labels)
     
@@ -120,13 +123,7 @@ function fill_template(xss,ys,position)
 end
 
 
-using Statistics
-
-(callbacks_l2rcg, callbacks_h1rcg, callbacks_earcg, callbacks_earg, callbacks_earcg0, callbacks_earg0, callbacks_scf, as, gaps, 
-    gaps_eff) =  test_gaps(;as, n_examples);
-#using BSON
-#BSON.@save "temp.bson" gaps gaps_eff callbacks_l2rcg callbacks_h1rcg callbacks_earcg callbacks_earg callbacks_earcg0 callbacks_earg0 callbacks_scf
-
+(callbacks, gaps, gaps_eff) =  test_gaps(;as, n_examples, method_names);
 factor(cb) = 1.0 #(log10(cb.norm_residuals[1]) + 8)/ (log10(cb.norm_residuals[1]) - log10(cb.norm_residuals[end]))
 
 get_means(cbs, fieldname; is_end = false) = is_end ? 
@@ -139,7 +136,7 @@ get_std(cbs, fieldname; is_end = false) = is_end ?
 xss_means = []
 xss_means_norm = []
 
-for cbs = [callbacks_earcg, callbacks_earcg0, callbacks_h1rcg, callbacks_l2rcg,  callbacks_scf]
+for cbs = callbacks
     global xss_means_norm
     global xss_means
     means = get_means(cbs, :calls_DftHamiltonian; is_end = true)
@@ -147,6 +144,7 @@ for cbs = [callbacks_earcg, callbacks_earcg0, callbacks_h1rcg, callbacks_l2rcg, 
     
     #re-normalize from matrix-vector to matrix-matrix multiplications
     means /= 4
+    stds /= 4
 
     means_norm = copy(means) 
     means_norm ./= means[1]
@@ -154,17 +152,40 @@ for cbs = [callbacks_earcg, callbacks_earcg0, callbacks_h1rcg, callbacks_l2rcg, 
     xss_means_norm = [xss_means_norm..., means_norm]
 end
 
-yss = [as for i = 1:5]
-
-
 virtual_gaps = get_virtual_gaps(; as);
 
-xss_gaps = [gaps, gaps_eff, virtual_gaps]
-io = open("plt-gaps-1.tex", "w")
-write(io, fill_template(xss_gaps, as, 1))
-close(io)
+if save_mode == "png"
+    if "SCF" in method_names
+        plt_gaps = plot(; ylabel = "gap", xlabel = "a", title = "Band gaps for a")
+        plot!(as, gaps, label = "HOMO-LUMO gap")
+        plot!(as, gaps_eff, label = "eff. gap")
+        plot!(as, virtual_gaps, label = "virt. gap")
+        savefig(plt_gaps, "gaps.png")
+    end
 
-io = open("plt-gaps-2.tex", "w")
-write(io, fill_template(xss_means, as, 2))
-write(io, fill_template(xss_means_norm, as, 3))
-close(io)
+    plt1 = plot(; yscale = :log, ylabel = "Hamiltonians", xlabel = "a", title = "Total Hamiltonians")
+    for im = 1:length(method_names)
+        plot!(as, xss_means[im], label = method_names[im])
+    end
+    savefig(plt1, "gaps_tot_hams.png")
+
+    plt2 = plot(; ylabel = "% change to a=10", xlabel = "a", title = "Percentage Hamiltonians")
+    for im = 1:length(method_names)
+        plot!(as, xss_means_norm[im], label = method_names[im])
+    end
+    savefig(plt2, "gaps_perc_hams.png")
+end
+
+if save_mode == "latex"
+    if "SCF" in method_names
+        xss_gaps = [gaps, gaps_eff, virtual_gaps]
+        io = open("plt-gaps-1.tex", "w")
+        write(io, fill_template(xss_gaps, as, 1))
+        close(io)
+    end
+
+    io = open("plt-gaps-2.tex", "w")
+    write(io, fill_template(xss_means, as, 2))
+    write(io, fill_template(xss_means_norm, as, 3))
+    close(io)
+end

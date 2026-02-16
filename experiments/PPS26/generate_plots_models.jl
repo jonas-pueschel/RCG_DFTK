@@ -1,14 +1,16 @@
 using RCG_DFTK
 using DFTK
 using Printf
+using Plots
 
 include("test_model.jl")
 include("../precompile_methods.jl")
 precompile_methods()
 
-method_idcs = [3,5,1,2,6]
+
 method_names = ["EARCG-St", "EARCG-Gr", "H1RCG", "L2RCG", "SCF"]
 model_names =  ["silicon", "GaAs", "TiO2"]
+save_mode = "png" #"latex"
 
 function generate_plots(xss,yss, colors, marks)
     st = ""
@@ -46,12 +48,6 @@ end
 
 function fill_template(xss, yss, position, model_name, x_label)
     #position = 1,2,3 : iter, hams, time
-
-    #re-normalize from matrix-vector to matrix-matrix multiplications
-    if x_label == "Hamiltonians" 
-        n_els = model_name == "TiO2" ? 16 : 4
-        xss ./= n_els
-    end
 
     ylabel_st = position == 1 ? "ylabel={\$\\|R^{(m)}\\|_F\$}, " : ""
     ytick = position == 1 ? "yticklabels={\\empty}," : "yticklabels={{\$10^{-8}\$,\$10^{-6}\$,\$10^{-4}\$,\$10^{-2}\$}}, ytick={{1.0e-8,1.0e-6,0.0001,0.01}},"
@@ -116,7 +112,7 @@ ppercentages = []
 
 for model_name = model_names
     global ppercentages
-    callback_h1rcg, callback_l2rcg, callback_earcg, callback_earg, callback_earg0, callback_earcg0, callback_scf, norm_res_0, percentages = test_model(; model_name)
+    callbacks, norm_res_0, percentages = test_model(; model_name, method_names)
 
     ppercentages = [ppercentages..., percentages]
 
@@ -124,7 +120,7 @@ for model_name = model_names
     xss_its = []
     xss_hams = []
     xss_times = []
-    for cb = [callback_earcg, callback_earcg0, callback_h1rcg, callback_l2rcg, callback_scf]
+    for cb = callbacks
         ys = [norm_res_0, cb.norm_residuals[1:end-1]...]
         xs_its = collect(0:(length(ys)-1))
         xs_hams = [0, cb.calls_DftHamiltonian[1:end-1]...]
@@ -136,43 +132,63 @@ for model_name = model_names
     end
 
     for (xss, position, x_label) in zip([xss_its, xss_hams, xss_times], [1,2,3], ["Iterations", "Hamiltonians", "CPU time (s)"])
-        filename = "$model_name-plt$position.tex"
-        io = open(filename, "w")
-        text =  fill_template(xss, yss, position, model_name, x_label)
-        write(io, text)
-        close(io)
+
+        #re-normalize from matrix-vector to matrix-matrix multiplications
+        if x_label == "Hamiltonians" 
+            n_els = model_name == "TiO2" ? 16 : 4
+            xss ./= n_els
+        end
+
+        if save_mode == "png"
+            # plot png
+            filename = "$model_name-plt$position.png"
+            plt = plot(; yscale = :log, ylabel = "norm res", xlabel = x_label, title = model_name)
+            for (xs,ys, method_name) in zip(xss,yss,method_names)
+                plot!(xs,ys, label = method_name)
+            end
+            savefig(plt, filename)
+
+        elseif  save_mode == "latex"
+            # plot latex code 
+            filename = "$model_name-plt$position.tex"
+            io = open(filename, "w")
+            text =  fill_template(xss, yss, position, model_name, x_label)
+            write(io, text)
+            close(io)
+        end
     end
 end
 
+if save_mode == "latex"
+    io = open("times_table.tex", "w")
+    lines = ""
+    headline = prod("& $method_name" for method_name = method_names)
+    cs =  prod(" c " for method_name = method_names)
+    for (model_name, percentages) = zip(model_names, ppercentages)
+        global lines
+        line = "$model_name"
+        for percentage = percentages
+            pstring = @sprintf("%.1f", 100percentage)
+            line *= " & $pstring\\%"
+        end 
+        line *= "\\\\\n"
+        lines *= line
+    end
 
-io = open("times_table.tex", "w")
-lines = ""
-headline = prod("& $method_name" for method_name = method_names)
-cs =  prod(" c " for method_name = method_names)
-for (model_name, percentages) = zip(model_names, ppercentages)
-    global lines
-    line = "$model_name"
-    for percentage = percentages[method_idcs]
-        pstring = @sprintf("%.1f", 100percentage)
-        line *= " & $pstring\\%"
-    end 
-    line *= "\\\\\n"
-    lines *= line
+    st = """\\begin{table}[H]
+    \\begin{center}
+    \\begin{tabular}{||c | $cs||} 
+    \\hline
+    $headline
+    \\\\ [0.5ex] 
+    \\hline\\hline
+    $lines[1ex] 
+    \\hline
+    \\end{tabular}
+    \\end{center}
+        \\caption{Percentage of overall runtime cost caused by \\texttt{DftHamiltonian\\_multiplication}.}
+        \\label{tab:ham_call_percentage}
+    \\end{table}"""
+    write(io, st)
+    close(io)
 end
-
-st = """\\begin{table}[H]
-\\begin{center}
-\\begin{tabular}{||c | $cs||} 
- \\hline
-   $headline
-   \\\\ [0.5ex] 
- \\hline\\hline
-$lines[1ex] 
- \\hline
-\\end{tabular}
-\\end{center}
-    \\caption{Percentage of overall runtime cost caused by \\texttt{DftHamiltonian\\_multiplication}.}
-    \\label{tab:ham_call_percentage}
-\\end{table}"""
-write(io, st)
-close(io)

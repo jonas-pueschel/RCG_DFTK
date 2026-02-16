@@ -3,6 +3,7 @@ using PseudoPotentialData
 include("setups/silicon_setup.jl")
 
 function precompile_methods()
+    println("Running each method once to ensure they are precompiled...")
     
     model, basis = silicon_setup(; Ecut = 10, kgrid = [1, 1, 1], supercell_size = [1, 1, 1]);
 
@@ -43,4 +44,6 @@ function precompile_methods()
         ψ = ψ1, ρ = ρ1,
         maxiter = 100
     );
+
+    println("finished.")
 end
