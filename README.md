@@ -5,14 +5,14 @@ This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225
 
 One first needs to locally save the directory `experiments` and its contents.
 
-The julia enviroment in the `experiments` directory is provided via `Manifest.toml` and `Project.toml` files. The packages can be installed by running from the `experiment` directory
-```julia
+The Julia enviroment in the `experiments` directory is provided via the `Manifest.toml` and `Project.toml` files. It can be installed by running from the `experiment` directory
+```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 # Using the generate_plots_models script
 In order to compare the methods, run (from the `experiments` directory)
-```
+```bash
 julia --project=. PPS26/generate_plots_models.jl 
 ```
 It generates the Iterations, Hamiltonian and Times plots for all three models and also (in the `latex` case) generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. 
@@ -27,7 +27,7 @@ The figures are then saved to the `experiments` directory. For quick experimenta
 # Using the generate_plots_gaps script
 
 In order to run the small gaps test, run (from the `experiments` directory)
-```
+```bash
 julia --project=. PPS26/generate_plots_gaps.jl 
 ```
 It generates the gaps plot and the two performance plots of the methods for the given gaps. In lines 14 to 17 the user can manually set the following parameters:
