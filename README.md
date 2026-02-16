@@ -7,11 +7,11 @@ Main purpose of this branch is to run the experiemtns from the [preprint](https:
 
 After navigating the directory `experiment`, one needs to create a Julia-enviroment by in the Julia REPL 
 ```julia
-pkg> activate .
-pkg> instantiate
-pkg> add DFTK@0.7.21
-pkg> add PseudoPotentialData@0.2.4
-pkg> add https://github.com/jonas-pueschel/RCG_DFTK.git#paper
+]activate .
+]instantiate
+]add DFTK@0.7.21
+]add PseudoPotentialData@0.2.4
+]add https://github.com/jonas-pueschel/RCG_DFTK.git#paper
 ```
 Then, the experiment scripts can be run in that enviroment.
 
