@@ -3,12 +3,6 @@ using RCG_DFTK
 using DFTK
 using LinearAlgebra
 
-# In order to make this result independent from precompile time,
-# run the precompile_methods function before (otherwise times will be off)
-include("../precompile_methods.jl")
-precompile_methods()
-
-
 include("./run_method.jl")
 include("../setups/silicon_setup.jl")
 include("../setups/GaAs_setup.jl")
@@ -45,7 +39,7 @@ function test_model(; model_name = "silicon", method_names = ["EARCG-St", "EARCG
     for method_name = method_names
         callback, percentage = run_method(basis, ψ1, ρ1, tol, method_name)
         callbacks = [callbacks..., callback]
-        
+
         percentages = [percentages..., percentage]
 
     end
