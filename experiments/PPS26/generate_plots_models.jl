@@ -6,7 +6,9 @@ include("test_model.jl")
 include("../precompile_methods.jl")
 precompile_methods()
 
-
+method_idcs = [3,5,1,2,6]
+method_names = ["EARCG-St", "EARCG-Gr", "H1RCG", "L2RCG", "SCF"]
+model_names =  ["silicon", "GaAs", "TiO2"]
 
 function generate_plots(xss,yss, colors, marks)
     st = ""
@@ -109,10 +111,7 @@ function fill_template(xss, yss, position, model_name, x_label)
     return tex_str
 end
 
-method_idcs = [3,5,1,2,6]
-method_names = ["EARCG-St", "EARCG-Gr", "H1RCG", "L2RCG", "SCF"]
 
-model_names =  ["silicon", "GaAs", "TiO2"]
 ppercentages = []
 
 for model_name = model_names
