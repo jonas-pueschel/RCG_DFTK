@@ -1,5 +1,5 @@
 The Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem, implemented using [DFTK.jl](https://github.com/JuliaMolSim/DFTK.jl). 
-This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225). This branch is dedicated to preserve the experiments from that paper, for the current version, refer to the `main` branch.
+This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225). This branch is dedicated to preserve the experiments from that paper, for the current version, refer to the [`main` branch](https://github.com/jonas-pueschel/RCG_DFTK).
 
 # Getting started
 
