@@ -3,22 +3,14 @@ This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225
 
 # Getting started
 
-One first needs to locally save the directory `experiments` and its contents, since the experiments are not contained in the `src` folder of the package but are stand-alone.
+One first needs to locally save the directory `experiments` and its contents.
 
-After navigating the directory `experiments`, one needs to create a Julia-enviroment by in the Julia REPL 
+The julia enviroment in the `experiments` directory is provided via `Manifest.toml` and `Project.toml` files. The packages can be installed by running from the `experiment` directory
 ```julia
-
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
-Then, the experiment scripts can be run in that enviroment.
 
-## Comparisons of methods
-
-There are two methods implemented for the two experiments:
-
-* The method `test_model` from `test_model.jl` runs the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF) for the model, given as key word argument `model_name`. Implemented are `"silicon", "GaAs", "TiO2"`. It returns `ResidualEvalCallback` objects for each method (these have collected all relevant data), the norm of the initial residual `norm_res_0` and the percentages of runtime caused by Hamiltonian application.
-* The method `test_gaps` from `test_gaps.jl`. Given key word argument `as` and `n_examples`, it runs for each lattice constant `a` in collection `as` the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF)  `n_example` times and returns a 2-dim array of `ResidualEvalCallback` objects for each method (array indices are index of `a` and number of run) as well as the HOMO-LUMO gaps and the effective gaps (read from the SCF result) for the different values of `a`. 
-
-### Using the generate_plots_models script
+# Using the generate_plots_models script
 In order to compare the methods, running (from the `experiments` directory)
 ```
 julia --project=. PPS26/generate_plots_models.jl 
@@ -32,6 +24,7 @@ The user can manually set the parameters in lines 11 to 13:
 
 The figures are then saved to the `experiments` directory.
 
+# Using the generate_plots_gaps script
 
 In order to run the small gaps test, running (from the `experiments` directory)
 ```
