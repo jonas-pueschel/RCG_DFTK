@@ -11,32 +11,32 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 # Using the generate_plots_models script
-In order to compare the methods, running (from the `experiments` directory)
+In order to compare the methods, run (from the `experiments` directory)
 ```
 julia --project=. PPS26/generate_plots_models.jl 
 ```
-generates the Iterations, Hamiltonian and Times plots for all three models and also (in the `latex` case) generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. 
+It generates the Iterations, Hamiltonian and Times plots for all three models and also (in the `latex` case) generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. 
 The user can manually set the parameters in lines 11 to 13:
 
 * `method_names` the methods for which the experment should be run (from `["EARCG-St", "EARCG-Gr", "EARG-St", "EARG-Gr", "H1RCG", "L2RCG", "SCF"]`)
 * `model_names` what models for which the experment should be run (from `["silicon", "GaAs", "TiO2"]`)
 * `save_mode` how the results should be saved (either `"png"` or `"latex"`)
 
-The figures are then saved to the `experiments` directory.
+The figures are then saved to the `experiments` directory. For quick experimentations, it is recommended to not run `"TiO2"`, since it usually takes a quite long time.
 
 # Using the generate_plots_gaps script
 
-In order to run the small gaps test, running (from the `experiments` directory)
+In order to run the small gaps test, run (from the `experiments` directory)
 ```
 julia --project=. PPS26/generate_plots_gaps.jl 
 ```
-generates the gaps plot and the two performance plots of the methods for the given gaps. In lines 14 to 17 the user can manually set the following parameters:
+It generates the gaps plot and the two performance plots of the methods for the given gaps. In lines 14 to 17 the user can manually set the following parameters:
 * `as` a collection of values for the lattice constant `a`, e.g. `as = 10:0.1:11.4`
 * `N_examples` how many runs per method should be performed for each value of `a`
 * `model_names` what models for which the experment should be run (from `["silicon", "GaAs", "TiO2"]`)
 * `save_mode` how the results should be saved (either `"png"` or `"latex"`)
 
-The figures are then saved to the `experiments` directory.
+The figures are then saved to the `experiments` directory. For quick experimentations, reduce the number of `as` and set `n_examples` to `1` or `2`.
 
 ## Compiling the .tex files
 In order for the files to compile, one needs to define the custom colors used in the paper and the plotwidth and height
