@@ -1,5 +1,5 @@
 The Riemannian conjugate gradient method is a method to calculate ground states of the Kohn-Sham minimization problem, implemented using [DFTK.jl](https://github.com/JuliaMolSim/DFTK.jl). 
-This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225).
+This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225). *The experiments from the paper can be found in the [`paper` branch](https://github.com/jonas-pueschel/RCG_DFTK/tree/paper).*
 
 # Disclaimer
 
@@ -17,7 +17,7 @@ variants of the first with a respective selection of the parameters. They can be
 
 ## Example
 
-A brief example on the usage of methods from this package, it can also be found in `experiments/simple_test.jl`. We emphasise that energy-adaptive methods usually need an initial guess that is close to the ground state in order to converge, while H1-RCG will usually show global convergence. As a trade-off, energy-adaptive methods generally converge faster locally with respect to runtime.
+A brief example on the usage of methods from this package, a smiliar example can also be found in `experiments/simple_test.jl`. We emphasise that energy-adaptive methods usually need an initial guess that is close to the ground state in order to converge, while H1-RCG will usually show global convergence. As a trade-off, energy-adaptive methods generally converge faster locally with respect to runtime.
 
 ```julia
 using DFTK
