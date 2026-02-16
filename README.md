@@ -11,7 +11,7 @@ Pkg.add(url = "https://github.com/jonas-pueschel/RCG_DFTK.git", rev = "paper");
 
 # Running the Experiments
 
-Main purpose of this branch is to run the experiemtns from the [preprint](https://arxiv.org/abs/2503.16225). One first needs to locally save the folder `./experiments` and its content locally, since the experiments are not contained in the `src` folder of the package but stand-alone.
+Main purpose of this branch is to run the experiemtns from the [preprint](https://arxiv.org/abs/2503.16225). One first needs to locally save the folder `./experiments` and its contents, since the experiments are not contained in the `src` folder of the package but stand-alone.
 
 ## Comparisons of Methods
 In order to compare the methods, running
