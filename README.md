@@ -9,6 +9,7 @@ The Julia enviroment in the `experiments` directory is provided via the `Manifes
 ```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
+This also installs the `RCG_DFTK` package version from this branch.
 
 # Using the generate_plots_models script
 In order to compare the methods, run (from the `experiments` directory)
