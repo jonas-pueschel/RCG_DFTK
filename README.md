@@ -33,7 +33,7 @@ julia --project=. PPS26/generate_plots_gaps.jl
 ```
 For silicon only, it generates the gaps plot and the two performance plots of the methods for the given gaps. In lines 14 to 17 the user can manually set the following parameters:
 * `as` a collection of values for the lattice constant `a`, e.g. `as = 10:0.1:11.4`
-* `N_examples` how many runs per method should be performed for each value of `a`
+* `n_examples` how many runs per method should be performed for each value of `a`
 * `method_names` methods the experment should include (from `["EARCG-St", "EARCG-Gr", "EARG-St", "EARG-Gr", "H1RCG", "L2RCG", "SCF"]`)
 * `save_mode` how the results should be saved (either `"png"` or `"latex"`)
 
