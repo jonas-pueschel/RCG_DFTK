@@ -212,6 +212,23 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     # callback.time_apply_K = 0.0;
 end
 
+function get_ham_time(::EvalRCG)
+    rcg_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["inner_timers"]
+    time_tot = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["time_ns"]
+    time_tot_hams = get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication"], "time_ns") +
+        get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication"], "time_ns") +
+        get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication"], "time_ns") +
+        get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication"], "time_ns") +
+        get_key_chain_value(rcg_timer, ["solve_H", "DftHamiltonian multiplication"], "time_ns")
+    return time_tot_hams/time_tot
+end
+
+function get_ham_time(::EvalSCF)
+    scf_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["self_consistent_field"]["inner_timers"]
+    time_tot = TimerOutputs.todict(DFTK.timer)["inner_timers"]["self_consistent_field"]["time_ns"]
+    time_tot_hams = get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication"], "time_ns")
+    return time_tot_hams/time_tot
+end
 
 function plot_callbacks(callbacks, names, ψ1, basis)
     model = basis.model
