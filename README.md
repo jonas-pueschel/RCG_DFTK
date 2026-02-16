@@ -17,9 +17,9 @@ Then, the experiment scripts can be run in that enviroment.
 
 
 ## Comparisons of Methods
-In order to compare the methods, running from the `./experiments` directory
+In order to compare the methods, running (from the `experiments` directory)
 ```
-julia ./PPS26/generate_plots_models.jl 
+julia --project=. PPS26/generate_plots_models.jl 
 ```
 generates the Iterations, Hamiltonian and Times `.tex` files of the plot for all three models and also generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. In the lines 9-11 of the script, the user can manually set which methods and models should be run. We note that the `method_ids` object points to the ordering of the results from the internally called `test_model` function, and these should fit the respective name (no manual checks if the user input is valid, the user must give consistent values). 
 
@@ -27,9 +27,9 @@ The method `test_model` from `test_model.jl` runs the methods (EARCG-St, EARCG-G
 
 ## Testing for Small Gaps
 
-In order to run the small gaps test, running
+In order to run the small gaps test, running (from the `experiments` directory)
 ```
-julia PATH/TO/experiments/PPS26/generate_plots_gaps.jl 
+julia --project=. PPS26/generate_plots_gaps.jl 
 ```
 generates the gaps plot and the two performance plots of the methods for the gaps as `.tex` files. In lines 11, 12, the user can manually set the range of `as` and `n_examples`. 
 
