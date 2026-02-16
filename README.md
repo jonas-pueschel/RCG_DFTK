@@ -3,34 +3,62 @@ This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225
 
 # Getting started
 
-Main purpose of this branch is to run the experiemtns from the [preprint](https://arxiv.org/abs/2503.16225). One first needs to locally save the directory `./experiments` and its contents, since the experiments are not contained in the `src` folder of the package but stand-alone.
+One first needs to locally save the directory `experiments` and its contents, since the experiments are not contained in the `src` folder of the package but are stand-alone.
 
-After navigating the directory `experiment`, one needs to create a Julia-enviroment by in the Julia REPL 
+After navigating the directory `experiments`, one needs to create a Julia-enviroment by in the Julia REPL 
 ```julia
-]activate .
-]instantiate
-]add DFTK@0.7.21
-]add PseudoPotentialData@0.2.4
-]add https://github.com/jonas-pueschel/RCG_DFTK.git#paper
+
 ```
 Then, the experiment scripts can be run in that enviroment.
 
+## Comparisons of methods
 
-## Comparisons of Methods
+There are two methods implemented for the two experiments:
+
+* The method `test_model` from `test_model.jl` runs the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF) for the model, given as key word argument `model_name`. Implemented are `"silicon", "GaAs", "TiO2"`. It returns `ResidualEvalCallback` objects for each method (these have collected all relevant data), the norm of the initial residual `norm_res_0` and the percentages of runtime caused by Hamiltonian application.
+* The method `test_gaps` from `test_gaps.jl`. Given key word argument `as` and `n_examples`, it runs for each lattice constant `a` in collection `as` the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF)  `n_example` times and returns a 2-dim array of `ResidualEvalCallback` objects for each method (array indices are index of `a` and number of run) as well as the HOMO-LUMO gaps and the effective gaps (read from the SCF result) for the different values of `a`. 
+
+### Using the generate_plots_models script
 In order to compare the methods, running (from the `experiments` directory)
 ```
 julia --project=. PPS26/generate_plots_models.jl 
 ```
-generates the Iterations, Hamiltonian and Times `.tex` files of the plot for all three models and also generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. In the lines 9-11 of the script, the user can manually set which methods and models should be run. We note that the `method_ids` object points to the ordering of the results from the internally called `test_model` function, and these should fit the respective name (no manual checks if the user input is valid, the user must give consistent values). 
+generates the Iterations, Hamiltonian and Times plots for all three models and also (in the `latex` case) generates the table with the percentage of runtimes caused by Hamiltonian multiplications for all methods and models. 
+The user can manually set the parameters in lines 11 to 13:
 
-The method `test_model` from `test_model.jl` runs the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF) for the model, given as key word argument `model_name`. Implemented are `"silicon", "GaAs", "TiO2"`. It returns `ResidualEvalCallback` objects for each method (these have collected all relevant data), the norm of the initial residual `norm_res_0` and the percentages of runtime caused by Hamiltonian application. 
+* `method_names` the methods for which the experment should be run (from `["EARCG-St", "EARCG-Gr", "EARG-St", "EARG-Gr", "H1RCG", "L2RCG", "SCF"]`)
+* `model_names` what models for which the experment should be run (from `["silicon", "GaAs", "TiO2"]`)
+* `save_mode` how the results should be saved (either `"png"` or `"latex"`)
 
-## Testing for Small Gaps
+The figures are then saved to the `experiments` directory.
+
 
 In order to run the small gaps test, running (from the `experiments` directory)
 ```
 julia --project=. PPS26/generate_plots_gaps.jl 
 ```
-generates the gaps plot and the two performance plots of the methods for the gaps as `.tex` files. In lines 11, 12, the user can manually set the range of `as` and `n_examples`. 
+generates the gaps plot and the two performance plots of the methods for the given gaps. In lines 14 to 17 the user can manually set the following parameters:
+* `as` a collection of values for the lattice constant `a`, e.g. `as = 10:0.1:11.4`
+* `N_examples` how many runs per method should be performed for each value of `a`
+* `model_names` what models for which the experment should be run (from `["silicon", "GaAs", "TiO2"]`)
+* `save_mode` how the results should be saved (either `"png"` or `"latex"`)
 
-Internally, it calls the method `test_gaps` from `test_gaps.jl`. Given key word argument `as` and `n_examples`, it runs for each lattice constant `a` in collection `as` the methods (EARCG-St, EARCG-Gr, EARG-St, EARG-Gr, H1RCG, L2RCG, SCF)  `n_example` times and returns a 2-dim array of `ResidualEvalCallback` objects for each method (array indices are index of `a` and number of run) as well as the HOMO-LUMO gaps and the effective gaps (read from the SCF result) for the different values of `a`. It also calls `get_virtual_gaps` from `calc_gaps.jl`, which calculates the SCF virtual gap for each value of `a`.
+The figures are then saved to the `experiments` directory.
+
+## Compiling the .tex files
+In order for the files to compile, one needs to define the custom colors used in the paper and the plotwidth and height
+
+```
+\definecolor{unia-purple}{RGB}{173, 0, 124}
+\definecolor{light-gray}{rgb}{0.8889,0.8889,0.8889}
+\definecolor{cpl1}{rgb}{0.8889,0.4356,0.2781}
+\definecolor{cpl2}{rgb}{0.0,0.6056,0.9787}
+\definecolor{cpl3}{rgb}{0.2422,0.6433,0.3044}
+\definecolor{cpl4}{rgb}{0.2, 0.2, 0.2}
+
+\newlength{\plotwidth}
+\newlength{\plotheight}
+\setlength{\plotwidth}{55mm}
+\setlength{\plotheight}{50mm}
+```
+The tex files are (with some minor changes) the same plots that were used in the paper, when run with standard parameters, however the random initial values may differ.
