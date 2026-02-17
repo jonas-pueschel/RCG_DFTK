@@ -3,7 +3,7 @@ This is the implementation from this [preprint](https://arxiv.org/abs/2503.16225
 
 # Getting started
 
-One first needs to locally save the directory `experiments` and its contents.
+One first needs to locally save the directory `experiments` *from this branch* and its contents.
 
 The Julia enviroment in the `experiments` directory is provided via the `Manifest.toml` and `Project.toml` files. It can be installed by running from the `experiment` directory
 ```bash
