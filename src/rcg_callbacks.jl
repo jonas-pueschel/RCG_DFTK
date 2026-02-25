@@ -5,7 +5,7 @@ Default callback function for `Riemannian conjugate gradient`, which prints a co
 
 function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
     prev_time = nothing
-    prev_energy = NaN
+    prev_cost = NaN
     return function callback(info)
         #!mpi_master() && return info  # Rest is printing => only do on master
         if info.stage == :finalize
@@ -17,13 +17,16 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
 
         if info.n_iter == 1
             prev_time = nothing
-            prev_energy = NaN
+            prev_cost = NaN
             grad_head = show_grad_norm ? "   log10|G| " : ""
             grad_line = show_grad_norm ? "   ---------" : ""
-            println("n     Cost              log10|R| $grad_head   log10(ΔE)    log10(Δρ)   Δtime     calls_ham")
-            println("---   ---------------   ---------$grad_line   ----------   ---------   -------   ---------")
+            mg_head = hasfield(typeof(info), :coarse_corrections) ? "   CC " : ""
+            mg_line = hasfield(typeof(info), :coarse_corrections) ? "   ---" : ""
+            println("n     Cost              log10|R| $grad_head   log10(ΔC)    log10(Δρ)   Δtime  $mg_head   calls_ham")
+            println("---   ---------------   ---------$grad_line   ----------   ---------   -------$mg_line   ---------")
         end
-        E = isnothing(info.cost) ? Inf : info.cost
+        cost = hasfield(typeof(info), :cost) ? info.cost : info.energies.total
+        cost = isnothing(cost) ? Inf : cost
         Δρ = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(abs(info.basis.dvol))
 
         tstr = " "^7
@@ -33,14 +36,15 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
 
         format_log8(e) = @sprintf "%8.2f" log10(abs(e))
 
-        Estr = (@sprintf "%+15.12f" round(E, sigdigits = 13))[1:15]
-        if isnan(prev_energy)
-            ΔE = " "^10
+        Estr = (@sprintf "%+15.12f" round(cost, sigdigits = 13))[1:15]
+        if isnan(prev_cost)
+            ΔC = " "^10
         else
-            sign = E < prev_energy ? "  " : "+ "
-            ΔE = sign * format_log8(E - prev_energy)
+            sign = cost < prev_cost ? "  " : "+ "
+            ΔC = sign * format_log8(cost - prev_cost)
         end
 
+        mgstr = hasfield(typeof(info), :coarse_corrections) ? (info.coarse_corrections[end] ? "    ✓ " : "    ✗ ") : ""
 
         Δρstr = isnothing(Δρ) ? " "^9 : " " * format_log8(Δρ)
 
@@ -62,9 +66,9 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             calls_hamstr = " "^9
         end
 
-        @printf "% 3d   %s   %s%s   %s   %s   %s   %s" info.n_iter Estr resstr gradstr ΔE Δρstr tstr calls_hamstr
+        @printf "% 3d   %s   %s%s   %s   %s   %s%s   %s" info.n_iter Estr resstr gradstr ΔC Δρstr tstr mgstr calls_hamstr
         println()
-        prev_energy = info.energies.total
+        prev_cost = cost
         prev_time = time_ns()
 
         flush(stdout)

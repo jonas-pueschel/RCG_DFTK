@@ -1,3 +1,6 @@
+using DFTK
+using PseudoPotentialData
+
 function silicon_setup(; Ecut = 20, a = 10.26, kgrid = [2, 2, 2], supercell_size = [1, 1, 1])
     # Silicon lattice constant in Bohr
     lattice = a / 2 * [

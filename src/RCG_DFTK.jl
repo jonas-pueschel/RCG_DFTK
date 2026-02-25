@@ -16,7 +16,27 @@ include("inner_solvers.jl")
 include("rcg_params.jl")
 include("rcg_callbacks.jl")
 include("rcg_benchmarking.jl")
+include("rcg_multilevel.jl")
+include("rcg_multilevel_params.jl")
 
+# Multilevel
+export two_level_riemannian_optimization,
+    default_coarse_solver
+export AbstractVectorMultilevelMap,
+    ProjectionMap,
+    MoorePenroseMap
+export RcgConvergenceResidualMGH
+export CoarseGridCostResidual,
+    ApproxCoarseGridCostResidual
+export AbstractCoarseCondition,
+    ToleranceMinStepCoarseCondition
+export AbstractCoarseDensity,
+    RecalculateDensity,
+    InterpolateDensity
+export AbstractCoarseTolerance,
+    RelativeResTolerance
+
+# RCG
 export riemannian_conjugate_gradient,
     h1_riemannian_conjugate_gradient,
     h1_riemannian_gradient,
@@ -73,7 +93,8 @@ export AbstractHSolver,
     LocalOptimalHSolver
 
 export ResidualEvalCallback,
-    ResidualEvalConverged
+    ResidualEvalConverged,
+    TrackResTimeCallback
 export AbstractEvalMethod,
     EvalRCG,
     EvalSCF,

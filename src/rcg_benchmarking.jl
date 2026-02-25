@@ -212,8 +212,7 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     # callback.time_apply_K = 0.0;
 end
 
-
-function plot_callbacks(callbacks, names, ψ1, basis)
+function init_norm_res(ψ1, basis)
     model = basis.model
     filled_occ = DFTK.filled_occupation(model)
     n_spin = model.n_spin_components
@@ -221,8 +220,12 @@ function plot_callbacks(callbacks, names, ψ1, basis)
     Nk = length(basis.kpoints)
     occupation = [filled_occ * ones(Float64, n_bands) for _ in 1:Nk]
 
-    norm_res_0 = norm(DFTK.compute_projected_gradient(basis, ψ1, occupation))
+    return norm(DFTK.compute_projected_gradient(basis, ψ1, occupation))
+end
 
+function plot_callbacks(callbacks, names, ψ1, basis)
+
+    norm_res_0 = init_norm_res(ψ1, basis)
     # iterations
     plt1 = plot(; yscale = :log, ylabel = L"\|\|R^{(k)}\|\|_F", xlabel = "Iterations")
     for (cb, method_name) in zip(callbacks, names)
@@ -256,4 +259,20 @@ function plot_callbacks(callbacks, names, ψ1, basis)
         plot!(times, resls, label = method_name)
     end
     return display(plt3)
+end
+
+struct TrackResTimeCallback
+    default_callback
+    start_time
+    times_tot
+    norm_residuals
+    function TrackResTimeCallback(default_callback, init_norm_res)
+        return new(default_callback, Int(time_ns()), [0], [init_norm_res])
+    end
+end
+
+function (cb::TrackResTimeCallback)(info)
+    push!(cb.times_tot, Int(time_ns()) - cb.start_time)
+    push!(cb.norm_residuals, info.norm_res)
+    return cb.default_callback(info)
 end

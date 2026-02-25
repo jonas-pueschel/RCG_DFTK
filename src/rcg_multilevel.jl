@@ -2,140 +2,220 @@
 multilevel rcg variant
 """
 
-# TODO: Different interpolation for ρ ?
-
-function interpolate_c2f(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, y) where {T}
-    @assert basis_c.kgrid == basis_f.kgrid && basis_c.Ecut <= basis_f.Ecut
-    Nk = length(basis_f.kpoints)
-    @assert size(y)[1] == Nk
-
-    x = Vector{Matrix{Complex{Float64}}}(undef, length(basis_f.kpoints))
-
-    for (kpt_c, kpt_f, yk, ik) = zip(basis_c.kpoints, basis_f.kpoints, y, 1:Nk)
-        @assert size(yk)[1] ==  length(G_vectors(basis_c, kpt_c))
-        xk = zeros(Complex{T}, length(G_vectors(basis_f, kpt_f)), size(yk)[2])
-        idx_f = 1
-        for idx_c = 1:length(G_vectors(basis_f, kpt_f))
-            while (kpt_c.G_vectors[idx_c] != kpt_f.G_vectors[idx_f])
-                idx_f += 1
-            end
-            xk[idx_f, :] = yk[idx_c, :]
-        end
-        x[ik] = xk
-    end
-
-    return x
+default_coarse_solver(basis_c) = function (ψ_c, ρ_c, Rres, tol)
+    callback = (info) -> nothing
+    cost_resiudal = CoarseGridCostResidual(ψ_c, Rres)
+    is_converged = RcgConvergenceResidualMGH(tol, 0.1, ψ_c)
+    result = riemannian_conjugate_gradient(basis_c; ρ = ρ_c, ψ = ψ_c, 
+        is_converged,
+        callback,
+        cost_resiudal, gradient = H1Gradient(basis_c),         
+        iteration_strat = AdaptiveBacktracking(
+            ModifiedSecantRule(0.05, 0.25, 1.0e-12, 0.5),
+            ConstantStep(1.0), 10
+        ),
+        do_rayleigh_ritz = false,
+    )
+    return result.ψ
 end
 
-function interpolate_f2c(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, x) where {T}
-    @assert basis_c.kgrid == basis_f.kgrid && basis_c.Ecut <= basis_f.Ecut
-    Nk = length(basis_f.kpoints)
-    @assert size(x)[1] == Nk
+# RCG algorithm to solve SCF equations
+DFTK.@timing function two_level_riemannian_optimization(
+    basis_c::PlaneWaveBasis{T},
+    basis_f::PlaneWaveBasis{T};
+    ρ = guess_density(basis),
+    ψ = nothing,
+    tol = 1.0e-6, maxiter = 100,
+    callback = RcgDefaultCallback(),
+    is_converged = RcgConvergenceResidual(tol),
+    coarse_solver = default_coarse_solver(basis_c),
+    coarse_cond = ToleranceMinStepCoarseCondition(0.45, tol),
+    coarse_density = InterpolateDensity(),
+    coarse_tol = RelativeResTolerance(1e-3, tol),
+    cost_resiudal = StandardCostResiudal(),
+    multilevel_map = ProjectionMap(),
+    gradient =  H1Gradient(basis_f),
+    retraction = RetractionPolar(),
+    check_convergence_early = true, 
+    iteration_strat_fine = StandardBacktracking(
+        ArmijoRule(0.1, 0.5),
+        ApproxHessianStep(), 10
+    ),
+    iteration_strat_coarse = AdaptiveBacktracking(
+        ModifiedSecantRule(0.05, 0.1, 1.0e-12, 0.5),
+        ConstantStep(1.0), 10
+    ),
+) where {T}
+    start_ns = time_ns()
+    # setting parameters
+    model_f = basis_f.model
+    
+    #@assert iszero(model_f.temperature)  # temperature is not yet supported
+    @assert isnothing(model_f.εF)        # neither are computations with fixed Fermi level
 
-    y = Vector{Matrix{Complex{Float64}}}(undef, length(basis_c.kpoints))
+    # check that there are no virtual orbitals
+    filled_occ = DFTK.filled_occupation(model_f)
+    n_spin = model_f.n_spin_components
+    n_bands = div(model_f.n_electrons, n_spin * filled_occ, RoundUp)
 
-    for (kpt_c, kpt_f, xk, ik) = zip(basis_c.kpoints, basis_f.kpoints, x, 1:Nk)
-        @assert size(xk)[1] ==  length(G_vectors(basis_f, kpt_f))
-        yk = zeros(Complex{T}, length(G_vectors(basis_c, kpt_c)), size(xk)[2])
-        idx_f = 1
-        for idx_c = 1:length(G_vectors(basis_c, kpt_c))
-            while (kpt_c.G_vectors[idx_c] != kpt_f.G_vectors[idx_f])
-                idx_f += 1
-            end
-            yk[idx_c, :] = xk[idx_f, :]
-        end
-        y[ik] = yk
+    ψ_f = ψ
+    ρ_f = ρ
+    if !isnothing(ψ_f)
+        @assert length(ψ_f) == length(basis_f.kpoints)
+        @assert n_bands == size(ψ_f[1], 2)
+    else
+        ψ_f = [DFTK.random_orbitals(basis_f, kpt, n_bands) for kpt in basis_f.kpoints]
     end
 
-    return y
-end
+    if isnothing(ρ_f)
+        ρ_f = guess_density(basis_f)
+    end
 
-function π_St(x)
-    Nk = size(x)[1]
-    pf = []
-    Sf = []
-    Sfinv = []
+
+    # number of kpoints and occupation
+    Nk = length(basis_f.kpoints)
+
+    occupation = [filled_occ * ones(T, n_bands) for ik in 1:Nk]
+
+    # iterators
+    n_iter = 0
+    coarse_corrections = []
+
+    # orbitals, densities and energies to be updated along the iterations
+
+    energies, H = energy_hamiltonian(basis_f, ψ_f, occupation; ρ = ρ_f)
+
+    # compute first residual
+    Hψ_f, Λ, res, cost = calculate_cost_residual(H, ψ_f, energies.total, basis_f, cost_resiudal)
+
+    # restrict point and residual
+    ψ_c = restrict_point(basis_c, basis_f, ψ_f)
+    Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
+
+    # calculate descent direction
+
+    if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, coarse_cond)
+        ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+        tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
+        ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+        η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
+        push!(coarse_corrections, true)
+    else
+        η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+        push!(coarse_corrections, false)
+    end
+
+
+    desc = inner_product_DFTK(basis_f, res, η)
+
+    #initial callback
+    info = (;
+        ham = H, ψ_f, res, η, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = nothing, ρout = ρ_f, coarse_corrections, n_iter,
+        energies, cost, algorithm = "RCG",
+    )
+    #callback(info)
+
+    τ = nothing
+
+    # give β the information from first iteration
+
+
+    # perform iterations
+    while n_iter < maxiter
+        n_iter += 1
+
+        #perform step
+        get_next(τ_trial) = get_next_rcg(basis_f, occupation, ψ_f, η, τ_trial, retraction, NoTransport(), cost_resiudal)
+        iteration_strat = coarse_corrections[end] ? iteration_strat_coarse : iteration_strat_fine
+        next = do_step(basis_f, ψ_f, η, nothing, res, nothing, desc, Λ, H, ρ_f, cost, get_next, iteration_strat)
+
+        #update orbitals, density, H and energies
+        ψ_f = next.ψ_next
+        ρ_prev = ρ_f
+        ρ_f = next.ρ_next
+        H = next.H_next
+        τ = next.τ
+        energies = next.energies_next
+        cost = next.cost_next
+        Hψ_f = next.Hψ_next
+        Λ = next.Λ_next
+        res = next.res_next
+
+        # test convergence before expensive direction calculation
+        if check_convergence_early
+            #info contains new res, but old η!
+            info = (;
+                ham = H, ψ_f, res, η, τ, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = ρ_prev, ρout = ρ, coarse_corrections, n_iter,
+                energies, cost, start_ns, algorithm = "RCG",
+            )
+            callback(info)
+            if is_converged(info)
+                break
+            end
+        end
+
+
+        # calculate new direction
+
+        # restrict point and residual
+        ψ_c = restrict_point(basis_c, basis_f, ψ_f)
+        Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
+
+        # calculate descent direction
+        if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, coarse_cond)
+            ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+            tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
+            ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+            η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
+            push!(coarse_corrections, true)
+        else
+            η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+            push!(coarse_corrections, false)
+        end
+
+
+        #check convergence
+        if !check_convergence_early
+            info = (;
+                ham = H, ψ_f, res, η, τ, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = ρ_prev, ρout = ρ, coarse_corrections, n_iter,
+                energies, cost, start_ns, algorithm = "RCG",
+            )
+            callback(info)
+            if is_converged(info)
+                break
+            end
+        end
+
+        #check if η is a descent direction. If not, restart
+        desc = inner_product_DFTK(basis_f, η, res)
+        if (desc >= 0)
+            @warn "the search direction is not a descent direction, try to use a better initial guess"
+        end
+    end
+
+    # Rayleigh-Ritz
+    eigenvalues = []
     for ik in 1:Nk
-        xk = x[ik]
-        S = xk'xk
-        s, U = eigen(S)
-        Σ = broadcast(x -> sqrt(abs(x)), s)
-        Σ_inv = broadcast(x -> 1.0 / x, Σ)
-        Sfinv_k = U * Diagonal(Σ_inv) * U'
-        pfk = xk * Sfinv_k
-        push!(pf, pfk)
-        push!(Sf, U * Diagonal(Σ) * U')
-        push!(Sfinv, Sfinv_k)
+        Hψ_fk = H.blocks[ik] * ψ_f[ik]
+        F = eigen(Hermitian(ψ_f[ik]'Hψ_fk))
+        push!(eigenvalues, F.values)
+        ψ_f[ik] .= ψ_f[ik] * F.vectors
     end
-    return pf, Sf, Sfinv
-end
 
+    εF = nothing  # does not necessarily make sense here, as the
+    # Aufbau property might not even be true
 
-function proj_TSt(φ, v)
-    Nk = size(φ)[1]
-    G = [φ[ik]'v[ik] for ik = 1:Nk]
-    G = 0.5 * [G[ik]' + G[ik] for ik = 1:Nk]
-    return [v[ik] - φ[ik] * G[ik] for ik = 1:Nk]
-end
+    # return results and call callback one last time with final state for clean
+    # up
 
+    # λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    # println(λ_min)
 
-function point_reduce(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ) where {T}
-    y = interpolate_f2c(basis_c, basis_f, ψ)
-    ϕ, ~, ~ = π_St(y)
-    return ϕ
-end
+    info = (;
+        ham = H, ψ_f, res, η, τ, basis = basis_f, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis_f, res), ρ, eigenvalues, occupation, εF, coarse_corrections, n_iter,
+        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG",
+    )
+    callback(info)
 
-function point_prolongate(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ϕ) where {T}
-    y = interpolate_c2f(basis_c, basis_f, ϕ)
-    ψ, ~, ~ = π_St(y)
-    return ψ
-end
-
-function invRet(φ,z)
-    Nk = size(p)[1]
-    Mtx_rhs = [2 * I(size(p[ik])[2]) for ik = 1:Nk]
-    Mtx_lhs = [φ[ik]'z[ik] for ik = 1:Nk]
-    Yz = [lyap(Mtx_lhs[ik], -Mtx_rhs[ik]) for ik = 1:Nk] 
-    return [z[ik] * Yz[ik] - φ[ik] for ik = 1:Nk], Yz
-end
-
-function DinvRet(φ,z,u; Yz = nothing)
-    Mtx_lhs = [φ[ik]'z[ik] for ik = 1:Nk]
-    if (isnothing(Yz))
-        Mtx_rhs_z = [2 * I(size(p[ik])[2]) for ik = 1:Nk]
-        Yz = [lyap(Mtx_lhs[ik], -Mtx_rhs_z[ik]) for ik = 1:Nk] 
-    end
-    Mtx_rhs_u = [φ[ik]'u[ik] * Yz[ik] for ik = 1:Nk]
-    Mtx_rhs_u = [M + M' for M = Mtx_rhs_u]
-    Yu = [lyap(Mtx_lhs[ik], -Mtx_rhs_u[ik]) for ik = 1:Nk] 
-    return [z[ik] * Yu[ik] + u[ik] * Yz[ik] for ik = 1:Nk]
-end
-
-
-
-mutable struct CoarseGridCostResidual <: AbstractCostResidual
-    wk
-    ϕk
-end
-
-function initialize_cost_residual(H , ψ, e_tot, basis, cgcr::CoarseGridCostResidual)
-    Nk = size(ψ)[1]
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
-
-    return Hψ, Λ, res, e_tot
-end
-
-function calculate_cost_residual(H , ψ, e_tot, basis, cgcr::CoarseGridCostResidual)
-    Nk = size(ψ)[1]
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
-
-
-
-    return Hψ, Λ, res, e_tot
+    info
 end

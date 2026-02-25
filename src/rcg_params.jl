@@ -6,6 +6,14 @@ function inner_product_DFTK(basis, ξ, η)
     return real(sum(ξη))
 end
 
+function norm_DFTK(basis, ξ)
+    n_cols = size(ξ[1])[2]
+    Nk = size(ξ)[1]
+
+    ξ2 = [dot(ξ[ik], ξ[ik]) for ik in 1:Nk] .* basis.kweights * n_cols
+    return sqrt(real(sum(ξ2)))
+end
+
 abstract type AbstractCostResidual end
 
 struct StandardCostResiudal <: AbstractCostResidual end

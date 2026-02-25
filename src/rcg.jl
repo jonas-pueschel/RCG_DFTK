@@ -6,17 +6,18 @@ DFTK.@timing function riemannian_conjugate_gradient(
         tol = 1.0e-6, maxiter = 100,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
-        gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.01)),
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.0)),
         cost_resiudal = StandardCostResiudal(),
         retraction = RetractionPolar(),
         cg_param = ParamFR_PRP(),
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
-        check_convergence_early = false, #check convergence before expensive gradient calculation
+        check_convergence_early = true, #check convergence before expensive gradient calculation
         iteration_strat = AdaptiveBacktracking(
             ModifiedSecantRule(0.05, 0.1, 1.0e-12, 0.5),
             ConstantStep(1.0), 10
         ),
+        do_rayleigh_ritz = true
     ) where {T}
     start_ns = time_ns()
     # setting parameters
@@ -149,13 +150,16 @@ DFTK.@timing function riemannian_conjugate_gradient(
         end
     end
 
+
     # Rayleigh-Ritz
     eigenvalues = []
     for ik in 1:Nk
         Hψk = H.blocks[ik] * ψ[ik]
         F = eigen(Hermitian(ψ[ik]'Hψk))
         push!(eigenvalues, F.values)
-        ψ[ik] .= ψ[ik] * F.vectors
+        if (do_rayleigh_ritz)
+            ψ[ik] .= ψ[ik] * F.vectors
+        end
     end
 
     εF = nothing  # does not necessarily make sense here, as the
@@ -181,7 +185,7 @@ function energy_adaptive_riemannian_conjugate_gradient(
         ρ = guess_density(basis),
         ψ = nothing,
         tol = 1.0e-6, maxiter = 100,
-        μ = 0.01,
+        μ = 0.0,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         shift = CorrectedRelativeΛShift(μ = μ),
@@ -210,7 +214,7 @@ function energy_adaptive_riemannian_gradient(
         ρ = guess_density(basis),
         ψ = nothing,
         tol = 1.0e-6, maxiter = 100,
-        μ = 0.01,
+        μ = 0.0,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         shift = CorrectedRelativeΛShift(μ = μ),
