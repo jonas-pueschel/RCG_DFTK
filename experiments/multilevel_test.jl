@@ -15,7 +15,7 @@ model_c, basis_c = silicon_setup(; Ecut = 15, kgrid = [4,4,4]);
 
 
 # Convergence tolerance
-tol = 1.0e-8;
+tol = 1.0e-6;
 
 # Initial value
 scfres_start = self_consistent_field(basis_c; tol = 0.5e-1, nbandsalg = DFTK.FixedBands(basis_c.model));
@@ -24,7 +24,28 @@ scfres_start = self_consistent_field(basis_c; tol = 0.5e-1, nbandsalg = DFTK.Fix
 ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_f, ψ1_c)
 ρ1 = DFTK.interpolate_density(ρ1_c, basis_c, basis_f)
 
+scfres_ref = self_consistent_field(basis_f; tol = 1e-10);
+e_ref = scfres_ref.energies.total
+
 init_norm_res = RCG_DFTK.init_norm_res(ψ1, basis_f)
+
+struct TrackResTimeCallback
+    default_callback
+    start_time
+    times_tot
+    Es
+    norm_residuals
+    function TrackResTimeCallback(default_callback, init_norm_res)
+        return new(default_callback, Int(time_ns()), [0], [scfres_start.energies.total], [init_norm_res])
+    end
+end
+
+function (cb::TrackResTimeCallback)(info)
+    push!(cb.times_tot, Int(time_ns()) - cb.start_time)
+    push!(cb.norm_residuals, info.norm_res)
+    push!(cb.Es, info.energies.total)
+    return cb.default_callback(info)
+end
 
 # multilevel
 println("\nMultilevel")
@@ -48,11 +69,34 @@ scfres_rcg2 = RCG_DFTK.h1_riemannian_conjugate_gradient(basis_f;
     callback = cb2, ψ = ψ1, ρ = ρ1, tol);
 println(cb2.times_tot[end] / 1e9)
 
+cb3 = TrackResTimeCallback(default_callback, init_norm_res)
+scfres_rcg3 = RCG_DFTK.h1_riemannian_gradient(basis_f;
+    callback = cb3, ψ = ψ1, ρ = ρ1, tol);
+println(cb3.times_tot[end] / 1e9)
+
 
 plt = plot(; yscale = :log, ylabel = "norm res", xlabel = "CPU time in s")
 plot!(cb1.times_tot / 1e9, cb1.norm_residuals, label = "MultiLevel")
 ml_times = [cb1.times_tot[pk] for pk = 2:(length(cb1.times_tot)-1) if scfres_rcg1.coarse_corrections[pk-1]]
 ml_resls = [cb1.norm_residuals[pk] for pk = 2:(length(cb1.norm_residuals)-1) if scfres_rcg1.coarse_corrections[pk-1]]
 plot!(cb2.times_tot / 1e9, cb2.norm_residuals, label = "H1RCG")
+plot!(cb3.times_tot / 1e9, cb3.norm_residuals, label = "H1RG")
 scatter!(ml_times/ 1e9, ml_resls, label = "coarse corr")
+display(plt)
 
+
+plt = plot(; yscale = :log, ylabel = "ΔE", xlabel = "CPU time in s")
+plot!(cb1.times_tot / 1e9, cb1.Es.-e_ref, label = "MultiLevel")
+ml_times = [cb1.times_tot[pk] for pk = 2:(length(cb1.times_tot)-1) if scfres_rcg1.coarse_corrections[pk-1]]
+ml_Es = [cb1.Es[pk] - e_ref for pk = 2:(length(cb1.norm_residuals)-1) if scfres_rcg1.coarse_corrections[pk-1]]
+plot!(cb2.times_tot / 1e9, cb2.Es.-e_ref, label = "H1RCG")
+plot!(cb3.times_tot / 1e9, cb3.Es.-e_ref, label = "H1RG")
+scatter!(ml_times/ 1e9, ml_Es, label = "coarse corr")
+display(plt)
+
+iter = [i for i = 0:(length(cb1.norm_residuals)-1)]
+plt2 = plot(; yscale = :log, ylabel = "ΔE", xlabel = "iter")
+plot!(iter, cb1.Es.-e_ref)
+ml_iters = [iter[pk] for pk = 2:(length(cb1.times_tot)-1) if scfres_rcg1.coarse_corrections[pk-1]]
+scatter!(ml_iters, ml_Es, label = "coarse corr")
+display(plt2)
