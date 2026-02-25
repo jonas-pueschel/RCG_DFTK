@@ -245,15 +245,27 @@ mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
     η
     ϵ
     ψ_c
-    function ToleranceMinStepCoarseCondition(η, ϵ)
-        return new(η, ϵ, nothing)
+    dist
+    n_iter
+    function ToleranceMinStepCoarseCondition(η, ϵ; dist = 1)
+        # we enforce that the very first step is always a gradient step
+        return new(η, ϵ, nothing, dist, max(1,dist))
     end
 end
 
+function EveryKCoarseCorr(k)
+    return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k)
+end
+
 function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ, res, Rres, cc::ToleranceMinStepCoarseCondition) where {T}
+    if (cc.n_iter > 0)
+        cc.n_iter -= 1
+        return false
+    end
     c1 = norm_DFTK(basis_c, Rres) ≥ cc.η * norm_DFTK(basis_f, res) 
     c2 = isnothing(cc.ψ_c) ? true : norm_DFTK(basis_f, cc.ψ_c - ψ) > cc.ϵ
     (c1 && c2) && (cc.ψ_c = ψ)
+    (c1 && c2) && (cc.n_iter = cc.dist)
     return c1 && c2
 end
 

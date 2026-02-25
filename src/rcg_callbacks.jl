@@ -20,12 +20,12 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             prev_cost = NaN
             grad_head = show_grad_norm ? "   log10|G| " : ""
             grad_line = show_grad_norm ? "   ---------" : ""
-            mg_head = hasfield(typeof(info), :coarse_corrections) ? "   CC " : ""
-            mg_line = hasfield(typeof(info), :coarse_corrections) ? "   ---" : ""
+            mg_head = haskey(info, :coarse_corrections) ? "   CC " : ""
+            mg_line = haskey(info, :coarse_corrections) ? "   ---" : ""
             println("n     Cost              log10|R| $grad_head   log10(ΔC)    log10(Δρ)   Δtime  $mg_head   calls_ham")
             println("---   ---------------   ---------$grad_line   ----------   ---------   -------$mg_line   ---------")
         end
-        cost = hasfield(typeof(info), :cost) ? info.cost : info.energies.total
+        cost = haskey(info, :cost) ? info.cost : info.energies.total
         cost = isnothing(cost) ? Inf : cost
         Δρ = isnothing(info.ρin) ? nothing : norm(info.ρout - info.ρin) * sqrt(abs(info.basis.dvol))
 
@@ -44,7 +44,7 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             ΔC = sign * format_log8(cost - prev_cost)
         end
 
-        mgstr = hasfield(typeof(info), :coarse_corrections) ? (info.coarse_corrections[end] ? "    ✓ " : "    ✗ ") : ""
+        mgstr = haskey(info, :coarse_corrections) ? (info.coarse_corrections[end] ? "    ✓ " : "    ✗ ") : ""
 
         Δρstr = isnothing(Δρ) ? " "^9 : " " * format_log8(Δρ)
 

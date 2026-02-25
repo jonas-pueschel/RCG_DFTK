@@ -83,7 +83,7 @@ end
 function calculate_gradient(ψ, Hψ, H, Λ, res, hg::HessianGradient)
     #TODO check the DFTK implementation
 
-    norm_res = norm(res)
+    norm_res = norm_DFTK(hg.basis, res)
 
     #this already has been done somewhere else but is not passed
     model = basis.model

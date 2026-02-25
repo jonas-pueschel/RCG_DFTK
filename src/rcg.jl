@@ -67,7 +67,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
     #initial callback
     info = (;
-        ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
+        ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
         energies, cost, algorithm = "RCG",
     )
     #callback(info)
@@ -101,7 +101,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         # test convergence before expensive gradient caluclation, note that info contains old grad, η!
         if check_convergence_early
             info = (;
-                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
+                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
                 energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
@@ -134,7 +134,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         if !check_convergence_early
             # update info and callback
             info = (;
-                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
+                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
                 energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
@@ -172,7 +172,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     # println(λ_min)
 
     info = (;
-        ham = H, ψ, grad, res, η, τ, basis, energies, cost, converged = is_converged(info), norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
+        ham = H, ψ, grad, res, η, τ, basis, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
         stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG",
     )
     callback(info)

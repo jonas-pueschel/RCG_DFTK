@@ -212,20 +212,29 @@ function update_callback(callback::ResidualEvalCallback, ::EvalPDCM)
     # callback.time_apply_K = 0.0;
 end
 
-function init_norm_res(ψ1, basis)
+function init_E_res(ψ, ρ, basis)
     model = basis.model
     filled_occ = DFTK.filled_occupation(model)
     n_spin = model.n_spin_components
     n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
     Nk = length(basis.kpoints)
     occupation = [filled_occ * ones(Float64, n_bands) for _ in 1:Nk]
+    
+    energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
 
-    return norm(DFTK.compute_projected_gradient(basis, ψ1, occupation))
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return energies, res
 end
 
-function plot_callbacks(callbacks, names, ψ1, basis)
+function plot_callbacks(callbacks, names, ψ1, ρ1,basis)
 
-    norm_res_0 = init_norm_res(ψ1, basis)
+    es0, res0 = init_E_res(ψ, ρ, basis)
+    norm_res_0 = norm_DFTK(basis, res0)
+
     # iterations
     plt1 = plot(; yscale = :log, ylabel = L"\|\|R^{(k)}\|\|_F", xlabel = "Iterations")
     for (cb, method_name) in zip(callbacks, names)
@@ -264,15 +273,36 @@ end
 struct TrackResTimeCallback
     default_callback
     start_time
+    err_time
     times_tot
+    Es
     norm_residuals
-    function TrackResTimeCallback(default_callback, init_norm_res)
-        return new(default_callback, Int(time_ns()), [0], [init_norm_res])
+    function TrackResTimeCallback(default_callback, init_norm_res, init_e)
+        return new(default_callback, Int(time_ns()), 0, [0], [init_e], [init_norm_res])
     end
 end
 
 function (cb::TrackResTimeCallback)(info)
-    push!(cb.times_tot, Int(time_ns()) - cb.start_time)
-    push!(cb.norm_residuals, info.norm_res)
+    if (!haskey(info, :norm_res))
+        time_err_start = Int(time_ns())
+        H = info.ham
+        ψ = info.ψ
+        basis = info.basis
+        occupation = info.occupation
+
+        ψ = DFTK.select_occupied_orbitals(basis, ψ, occupation).ψ
+        Hψ = [H.blocks[ik] * ψk for (ik, ψk) in enumerate(ψ)]
+        Λ = [ψk'Hψ[ik] for (ik, ψk) in enumerate(ψ)]
+        Λ = 0.5 * [(Λk + Λk') for (ik, Λk) in enumerate(Λ)]
+        res = [Hψ[ik] - ψk * Λ[ik] for (ik, ψk) in enumerate(ψ)]
+        norm_res = norm(res)
+        time_err_end = Int(time_ns())
+        push!(cb.norm_residuals, norm_res)
+        cb.err_time += (time_err_end - time_err_start)
+    else
+        push!(cb.norm_residuals, info.norm_res)
+    end
+    push!(cb.times_tot, Int(time_ns()) - cb.start_time - cb.err_time)
+    push!(cb.Es, info.energies.total)
     return cb.default_callback(info)
 end

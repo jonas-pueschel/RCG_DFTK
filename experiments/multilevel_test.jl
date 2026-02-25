@@ -27,31 +27,16 @@ scfres_start = self_consistent_field(basis_c; tol = 0.5e-1, nbandsalg = DFTK.Fix
 scfres_ref = self_consistent_field(basis_f; tol = 1e-10);
 e_ref = scfres_ref.energies.total
 
-init_norm_res = RCG_DFTK.init_norm_res(ψ1, basis_f)
+es0 ,res0 = RCG_DFTK.init_E_res(ψ1, ρ1, basis_f)
 
-struct TrackResTimeCallback
-    default_callback
-    start_time
-    times_tot
-    Es
-    norm_residuals
-    function TrackResTimeCallback(default_callback, init_norm_res)
-        return new(default_callback, Int(time_ns()), [0], [scfres_start.energies.total], [init_norm_res])
-    end
-end
-
-function (cb::TrackResTimeCallback)(info)
-    push!(cb.times_tot, Int(time_ns()) - cb.start_time)
-    push!(cb.norm_residuals, info.norm_res)
-    push!(cb.Es, info.energies.total)
-    return cb.default_callback(info)
-end
+init_norm_res = RCG_DFTK.norm_DFTK(basis_f, res0)
+init_e = es0.total
 
 # multilevel
 println("\nMultilevel")
 default_callback = RCG_DFTK.RcgDefaultCallback()
 
-cb1 = TrackResTimeCallback(default_callback, init_norm_res)
+cb1 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 scfres_rcg1 = RCG_DFTK.two_level_riemannian_optimization(basis_c, basis_f;
     ψ = ψ1, ρ = ρ1, tol, 
     callback = cb1,
@@ -64,12 +49,12 @@ scfres_rcg1 = RCG_DFTK.two_level_riemannian_optimization(basis_c, basis_f;
 println(cb1.times_tot[end] / 1e9)
 
 
-cb2 = TrackResTimeCallback(default_callback, init_norm_res)
+cb2 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 scfres_rcg2 = RCG_DFTK.h1_riemannian_conjugate_gradient(basis_f;
     callback = cb2, ψ = ψ1, ρ = ρ1, tol);
 println(cb2.times_tot[end] / 1e9)
 
-cb3 = TrackResTimeCallback(default_callback, init_norm_res)
+cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 scfres_rcg3 = RCG_DFTK.h1_riemannian_gradient(basis_f;
     callback = cb3, ψ = ψ1, ρ = ρ1, tol);
 println(cb3.times_tot[end] / 1e9)
