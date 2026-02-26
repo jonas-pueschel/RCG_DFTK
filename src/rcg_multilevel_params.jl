@@ -161,10 +161,21 @@ function proj_TSt(ψ, v)
     return [v[ik] - ψ[ik] * G[ik] for ik = 1:Nk]
 end
 
+abstract type AbstractPointRestriction end
 
-function restrict_point(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_f) where {T}
+mutable struct ProjectiveRestriction <: AbstractPointRestriction
+    Sf
+    Sfinv
+    function ProjectiveRestriction()
+        new(nothing, nothing)
+    end
+end
+
+function restrict_point(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_f, pr::ProjectiveRestriction) where {T}
     y = interpolate_f2c(basis_c, basis_f, ψ_f)
-    ψ_c, ~, ~ = π_St(y)
+    ψ_c, Sf, Sfinv = π_St(y)
+    pr.Sf = Sf
+    pr.Sfinv = Sfinv
     return ψ_c
 end
 
@@ -188,10 +199,25 @@ function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T
     return proj_TSt(ψ_f, v)
 end
 
-@kwdef mutable struct MoorePenroseMap <: AbstractVectorMultilevelMap
-    Sf = nothing
-    Sfinv = nothing
-    y = nothing
+mutable struct PseudoInverse_1_2_Map <: AbstractVectorMultilevelMap
+    pr::ProjectiveRestriction
+end
+
+function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, pim::PseudoInverse_1_2_Map) where {T}
+    Nk = length(v)
+    w = interpolate_f2c(basis_c, basis_f, v)
+    w = [w[ik] * pim.pr.Sf[ik] for ik = 1:Nk]
+    return proj_TSt(ψ_c, w)
+end
+
+function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, w, pim::PseudoInverse_1_2_Map) where {T}
+    Nk = length(w)
+    v = interpolate_c2f(basis_c, basis_f, w)
+    return [v[ik] * pim.pr.Sf[ik] for ik = 1:Nk]
+end
+
+mutable struct MoorePenroseMap <: AbstractVectorMultilevelMap
+    pr::ProjectiveRestriction
 end
 
 function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, ::MoorePenroseMap) where {T}

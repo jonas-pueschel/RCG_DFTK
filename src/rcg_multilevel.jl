@@ -33,7 +33,8 @@ DFTK.@timing function two_level_riemannian_optimization(
     coarse_density = InterpolateDensity(),
     coarse_tol = RelativeResTolerance(1e-3, tol),
     cost_resiudal = StandardCostResiudal(),
-    multilevel_map = ProjectionMap(),
+    point_restriction = ProjectiveRestriction(),
+    multilevel_map = PseudoInverse_1_2_Map(point_restriction),
     gradient =  H1Gradient(basis_f),
     retraction = RetractionPolar(),
     check_convergence_early = true, 
@@ -89,7 +90,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     Hψ_f, Λ, res, cost = calculate_cost_residual(H, ψ_f, energies.total, basis_f, cost_resiudal)
 
     # restrict point and residual
-    ψ_c = restrict_point(basis_c, basis_f, ψ_f)
+    ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
     Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
 
     # calculate descent direction
@@ -158,7 +159,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         # calculate new direction
 
         # restrict point and residual
-        ψ_c = restrict_point(basis_c, basis_f, ψ_f)
+        ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
         Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
 
         # calculate descent direction

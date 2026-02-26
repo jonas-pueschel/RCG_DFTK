@@ -24,7 +24,10 @@ export two_level_riemannian_optimization,
     default_coarse_solver
 export AbstractVectorMultilevelMap,
     ProjectionMap,
+    PseudoInverse_1_2_Map,
     MoorePenroseMap
+export AbstractPointRestriction,
+    ProjectiveRestriction
 export RcgConvergenceResidualMGH
 export CoarseGridCostResidual,
     ApproxCoarseGridCostResidual

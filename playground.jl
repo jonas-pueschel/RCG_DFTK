@@ -27,10 +27,11 @@ function polar_ret(X)
 end
 
 proj_T(X, U) = U - 0.5 * X * (X'U + U'X)
-random_tangent_vector(X) = proj_T(X, rand(Float64, n, m))
+random_tangent_vector(X) = proj_T(X, rand(Float64, size(X)...))
 
 polar_ret(X, D) = polar_ret(X + D)
 random_point() = polar_ret(rand(Float64, n, m))
+random_point(n, m) = polar_ret(rand(Float64, n, m))
 
 
 
@@ -74,71 +75,72 @@ function r(X)
 end
 
 function Dr(X, V)
-    
+    W = If2c(V)
+    Y =  If2c(X)
+
+    S = Y'Y
+    s, U = eigen(S)
+    Σ = broadcast(x -> sqrt(abs(x)), s)
+    Σ_inv = broadcast(x -> 1.0 / x, Σ)
+    Sf = U * Diagonal(Σ) * U'
+    Sfinv = U * Diagonal(Σ_inv) * U'
+
+    Mtx_rhs = Y'W
+    Mtx_rhs += Mtx_rhs'
+    Xv = lyap(Sf, - Mtx_rhs)
+
+    return (W - Y * Sfinv * Xv) * Sfinv
 end
 
-function Dr_psinv(X, U)
-    
-end
+function Dr_psinv(X, W)
+    Y = If2c(X)
+
+    S = Y'Y
+    s, U = eigen(S)
+    Σ = broadcast(x -> sqrt(abs(x)), s)
+    Σ_inv = broadcast(x -> 1.0 / x, Σ)
+    Sf = U * Diagonal(Σ) * U'
+    Sfinv = U * Diagonal(Σ_inv) * U'
+
+    Mtx_rhs = Sfinv * (W'Y)
+
+    Mtx_rhs += Mtx_rhs'
+
+    println(norm(Mtx_rhs))
+
+    Yw = lyap(Sf, -Mtx_rhs)
+
+    return Ic2f(W)* Sf
+end 
 
 function adj_Dr_psinv(X, V)
     
 end
 
 X = random_point()
-
-δX = 5 * random_tangent_vector(X)
-Y = polar_ret(X + δX)
+Y = r(X)
 
 V = random_tangent_vector(X)
 W = random_tangent_vector(Y)
+W2 = random_tangent_vector(X)
+V2 = random_tangent_vector(Y)
 
-adDirV1 = adj_D_inv_ret(X,Y,V)
+S = If2c(X)'If2c(X)
+s, U = eigen(S)
+Σ = broadcast(x -> sqrt(abs(x)), s)
+Σ_inv = broadcast(x -> 1.0 / x, Σ)
+Sf = U * Diagonal(Σ) * U'
+Sfinv = U * Diagonal(Σ_inv) * U'
 
-#check tangent space
-println("error in tangent space: $(norm(adDirV1'Y + Y'adDirV1))")
+test(U) = Ic2f(U * Sf)
+test_adj(Y, V) = proj_T(Y,If2c(V * Sf))
 
-DirW = D_inv_ret(X,Y,W)
-#println(norm(DirW'X + X'DirW))
-
-
-
-# println(norm(adirV'Y + Y'adirV))
-ip1 = dot(V, DirW)
-ip2 = dot(adDirV1, W)
-println("error in inner product: $((ip1-ip2)/norm(ip1))")
-
-
-# D = random_tangent_vector(Y)
-
-# h = 1e-8
-
-# Yh = polar_ret(Y, h * D)
-
-# U = inv_ret(X, Y) # indeed equal to δX
-# Uh = inv_ret(X, Yh)
-
-# ddir_invRet1 = D_inv_ret(X, Y, D)
-# # ddir_invRet2 = (Uh - U)/h
-# # equal to approx 0, meaning our formula is correct
-# # norm(ddir_invRet1 - ddir_invRet2)
-
-# W = random_tangent_vector(X)
-
-# E(Z) = dot(inv_ret(X,Z),W)
-
-# gradE(Z) = D_inv_ret(Z, X, W)
-
-# gradE_2(Z) = - 1/(dot(X,Z)) *  proj_T(Z, dot(W, X)/(dot(X,Z))*Z - W)
-
-# # E_simple(Z) = dot(Z, W)
-
-# # gradE_simple(Z) = proj_T(Z, W)
+test(Dr(X,test(W))) - test(W)
+Dr(X, test(Dr(X, V))) - Dr(X,V)
+dot(Dr(X,test(W)), W2 * Sf) - dot(W,  Dr(X,test(W2)) * Sf) 
+dot(test(Dr(X,V)), V2 * Sfinv) - dot(test(Dr(X,V2)), V * Sfinv)
 
 
-# ddir1_E = dot(W, D_inv_ret(X, Y, D))
-# ddir2_E = dot(gradE(Y), D)
-# ddir22_E = dot(gradE_2(Y), D)
-# ddir3_E = (E(Yh) - E(Y))/h
+dot(test(W),V) - dot(W, test_adj(Y, V))
 
-
+norm(test_adj(Y, V)'Y + Y'test_adj(Y, V))
