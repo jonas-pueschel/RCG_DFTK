@@ -68,35 +68,37 @@ scfres_rcg0 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_
     );
 println(cb2.times_tot[end] / 1e9)
 
-println("\nH1 A2g")
-cb1 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
-    callback = cb1,
-    gradient_functor 
-    );
-println(cb1.times_tot[end] / 1e9)
-
 gradient_functor = (basis) -> EAGradient(basis)
 
 println("\nEA 4g")
-cb2 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[1:end]; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
-    callback = cb2,
+    callback = cb3,
     gradient_functor
     );
-println(cb0.times_tot[end] / 1e9)
+println(cb3.times_tot[end] / 1e9)
 
 println("\nEA 2g")
-cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
+cb4 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+scfres_rcg0 = two_level_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
-    callback = cb3,
-    callback_coarse = RcgDefaultCallback(; lpadding = "# "),
-    gradient_functor 
+    callback = cb4,
+    gradient = gradient_functor(basis_arr[end]),
+    coarse_solver = (basis_c) -> h1_coarse_solver(basis_c, 10),
+);
+println(cb4.times_tot[end] / 1e9)
+
+println("\nEA A2g")
+cb5 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+scfres_rcg0 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
+    coarse_model_tol = 1e-2,
+    callback = cb5,
+    gradient = gradient_functor(basis_arr[end]),
+    coarse_solver = (basis_c) -> h1_coarse_solver(basis_c, 10),
     );
-println(cb1.times_tot[end] / 1e9)
+println(cb5.times_tot[end] / 1e9)
+
 
 
 # # cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
