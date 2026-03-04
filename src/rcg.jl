@@ -7,7 +7,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.0)),
-        cost_resiudal = StandardCostResiudal(),
+        cost_residual = StandardCostResiudal(),
         retraction = RetractionPolar(),
         cg_param = ParamFR_PRP(),
         transport_η = DifferentiatedRetractionTransport(),
@@ -55,7 +55,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
 
     # compute first residual
-    Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_resiudal)
+    Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_residual)
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
@@ -82,7 +82,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         n_iter += 1
 
         #perform step
-        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η, cost_resiudal)
+        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η, cost_residual)
         next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, iteration_strat)
 
         #update orbitals, density, H and energies

@@ -18,6 +18,13 @@ function silicon_setup(; Ecut = 20, a = 10.26, kgrid = [2, 2, 2], supercell_size
 
     model = model_LDA(lattice, atoms, positions)
     #model = model_PBE(lattice, atoms, positions)
-    basis = PlaneWaveBasis(model; Ecut = Ecut, kgrid)
-    return [model, basis]
+    if isa(Ecut, Number)
+        basis = PlaneWaveBasis(model; Ecut = Ecut, kgrid)
+        return [model, basis]
+    elseif isa(Ecut, Array)
+        basis_arr = [PlaneWaveBasis(model; Ecut = e, kgrid) for e = Ecut]
+        return [model, basis_arr]
+    else
+        throw("invalid type of Ecut")
+    end
 end

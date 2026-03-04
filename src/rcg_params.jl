@@ -111,13 +111,16 @@ mutable struct EAGradient <: AbstractGradient
     const h_solver::AbstractHSolver   #type of solver for H
     const naive_formula::Bool
     Hinv_ψ
-
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
-        if isnothing(Pks)
-            Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-        end
-        return new(basis, itmax, tol, Pks, shift, h_solver, naive_formula, nothing)
+end
+function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
+    if isnothing(Pks)
+        Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
     end
+    return EAGradient(basis, itmax, tol, Pks, shift, h_solver, naive_formula, nothing)
+end
+
+function EAGradient(basis::PlaneWaveBasis{T}; shift = CorrectedRelativeΛShift(μ = 0.0), itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
+    return EAGradient(basis, shift)
 end
 
 struct ConstantShift <: AbstractShiftStrategy
@@ -662,7 +665,7 @@ end
 function check_rule(basis, E_current, desc_current, next, rule::ArmijoRule)
     #small correction if change in energy is small TODO: better workaround.
     E_next = next.cost_next
-    return E_next <= E_current + (rule.β * next.τ * desc_current + 32 * eps(Float64) * abs(E_current))
+    return E_next <= E_current + (rule.β * next.τ * desc_current)
 end
 function backtrack(next, rule::ArmijoRule)
     return rule.δ * next.τ
@@ -768,7 +771,7 @@ end
 abstract type IterationStrategy end
 
 #DFTK.@timing
-function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetraction, transport::AbstractTransport, cost_resiudal::AbstractCostResidual)
+function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetraction, transport::AbstractTransport, cost_residual::AbstractCostResidual)
     Nk = size(ψ)[1]
 
     ψ_next = calculate_retraction(ψ, η, τ, retraction)
@@ -776,7 +779,7 @@ function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetract
     ρ_next = DFTK.compute_density(basis, ψ_next, occupation)
     energies_next, H_next = DFTK.energy_hamiltonian(basis, ψ_next, occupation; ρ = ρ_next)
 
-    Hψ_next, Λ_next, res_next, cost_next = calculate_cost_residual(H_next, ψ_next, energies_next.total, basis, cost_resiudal)
+    Hψ_next, Λ_next, res_next, cost_next = calculate_cost_residual(H_next, ψ_next, energies_next.total, basis, cost_residual)
 
     Tη_next = calculate_transport(ψ_next, η, η, τ, ψ, transport, retraction; is_prev_dir = true)
 

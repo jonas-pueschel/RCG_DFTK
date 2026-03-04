@@ -122,8 +122,8 @@ Y = r(X)
 
 V = random_tangent_vector(X)
 W = random_tangent_vector(Y)
-W2 = random_tangent_vector(X)
-V2 = random_tangent_vector(Y)
+W2 = random_tangent_vector(Y)
+V2 = random_tangent_vector(X)
 
 S = If2c(X)'If2c(X)
 s, U = eigen(S)
@@ -135,7 +135,7 @@ Sfinv = U * Diagonal(Σ_inv) * U'
 test(U) = Ic2f(U * Sf)
 test_adj(Y, V) = proj_T(Y,If2c(V * Sf))
 
-test(Dr(X,test(W))) - test(W)
+test(Dr(X,test(W))) - test(W)v
 Dr(X, test(Dr(X, V))) - Dr(X,V)
 dot(Dr(X,test(W)), W2 * Sf) - dot(W,  Dr(X,test(W2)) * Sf) 
 dot(test(Dr(X,V)), V2 * Sfinv) - dot(test(Dr(X,V2)), V * Sfinv)

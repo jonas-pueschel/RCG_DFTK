@@ -16,6 +16,10 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::ApproxCoarseGridCos
     Rres = - cgcr.wk
     cgcr.wk += res
 
+    d1 = inner_product_DFTK(basis, Rres, res)
+    d2 = norm_DFTK(basis, Rres) * norm_DFTK(basis, res)
+    println("quot: $(d1/d2)")
+
     return Hψ, Λ, Rres, e_tot
 end
 
@@ -275,7 +279,7 @@ mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
     n_iter
     function ToleranceMinStepCoarseCondition(η, ϵ; dist = 1)
         # we enforce that the very first step is always a gradient step
-        return new(η, ϵ, nothing, dist, max(1,dist))
+        return new(η, ϵ, nothing, dist, 0)
     end
 end
 
@@ -283,15 +287,14 @@ function EveryKCoarseCorr(k)
     return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k)
 end
 
-function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ, res, Rres, cc::ToleranceMinStepCoarseCondition) where {T}
-    if (cc.n_iter > 0)
-        cc.n_iter -= 1
+function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ, res, Rres, n_iter, cc::ToleranceMinStepCoarseCondition) where {T}
+    if (cc.n_iter > n_iter)
         return false
     end
     c1 = norm_DFTK(basis_c, Rres) ≥ cc.η * norm_DFTK(basis_f, res) 
     c2 = isnothing(cc.ψ_c) ? true : norm_DFTK(basis_f, cc.ψ_c - ψ) > cc.ϵ
     (c1 && c2) && (cc.ψ_c = ψ)
-    (c1 && c2) && (cc.n_iter = cc.dist)
+    (c1 && c2) && (cc.n_iter = n_iter + cc.dist + 1)
     return c1 && c2
 end
 

@@ -270,7 +270,7 @@ function plot_callbacks(callbacks, names, ψ1, ρ1,basis)
     return display(plt3)
 end
 
-struct TrackResTimeCallback
+mutable struct TrackResTimeCallback
     default_callback
     start_time
     err_time

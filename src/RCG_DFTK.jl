@@ -21,7 +21,9 @@ include("rcg_multilevel_params.jl")
 
 # Multilevel
 export two_level_riemannian_optimization,
-    default_coarse_solver
+    multilevel_riemannian_optimization,
+    h1_coarse_solver,
+    ea_coarse_solver
 export AbstractVectorMultilevelMap,
     ProjectionMap,
     PseudoInverse_1_2_Map,
@@ -29,7 +31,9 @@ export AbstractVectorMultilevelMap,
 export AbstractPointRestriction,
     ProjectiveRestriction
 export RcgConvergenceResidualMGH
-export CoarseGridCostResidual,
+export AbstractCostResidual, 
+    StandardCostResiudal,
+    CoarseGridCostResidual,
     ApproxCoarseGridCostResidual
 export AbstractCoarseCondition,
     ToleranceMinStepCoarseCondition

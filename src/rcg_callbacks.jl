@@ -3,7 +3,7 @@ Default callback function for `Riemannian conjugate gradient`, which prints a co
 """
 
 
-function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
+function RcgDefaultCallback(; show_time = true, show_grad_norm = false, lpadding = "")
     prev_time = nothing
     prev_cost = NaN
     return function callback(info)
@@ -14,7 +14,6 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             end
             return info
         end
-
         if info.n_iter == 1
             prev_time = nothing
             prev_cost = NaN
@@ -22,8 +21,8 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
             grad_line = show_grad_norm ? "   ---------" : ""
             mg_head = haskey(info, :coarse_corrections) ? "   CC " : ""
             mg_line = haskey(info, :coarse_corrections) ? "   ---" : ""
-            println("n     Cost              log10|R| $grad_head   log10(ΔC)    log10(Δρ)   Δtime  $mg_head   calls_ham")
-            println("---   ---------------   ---------$grad_line   ----------   ---------   -------$mg_line   ---------")
+            println("$(lpadding)n     Cost              log10|R| $grad_head   log10(ΔC)    log10(Δρ)   Δtime  $mg_head   calls_ham")
+            println("$(lpadding)---   ---------------   ---------$grad_line   ----------   ---------   -------$mg_line   ---------")
         end
         cost = haskey(info, :cost) ? info.cost : info.energies.total
         cost = isnothing(cost) ? Inf : cost
@@ -65,7 +64,7 @@ function RcgDefaultCallback(; show_time = true, show_grad_norm = false)
         else
             calls_hamstr = " "^9
         end
-
+        print(lpadding)
         @printf "% 3d   %s   %s%s   %s   %s   %s%s   %s" info.n_iter Estr resstr gradstr ΔC Δρstr tstr mgstr calls_hamstr
         println()
         prev_cost = cost

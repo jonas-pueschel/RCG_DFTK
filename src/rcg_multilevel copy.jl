@@ -37,14 +37,14 @@ end
 
 # RCG algorithm to solve SCF equations
 DFTK.@timing function two_level_riemannian_optimization(
-    basis_c_arr::Array,
+    basis_c::PlaneWaveBasis{T},
     basis_f::PlaneWaveBasis{T};
     ρ = guess_density(basis),
     ψ = nothing,
     tol = 1.0e-6, maxiter = 100, maxiter_inner = 10,
     callback = RcgDefaultCallback(),
     is_converged = RcgConvergenceResidual(tol),
-    coarse_solver = (basis_c) -> ea_coarse_solver(basis_c, maxiter_inner),
+    coarse_solver = ea_coarse_solver(basis_c, maxiter_inner),
     coarse_cond_tol = 0.45,
     coarse_cond = ToleranceMinStepCoarseCondition(coarse_cond_tol, tol),
     coarse_density = RecalculateDensity(),
@@ -73,10 +73,6 @@ DFTK.@timing function two_level_riemannian_optimization(
     
     #@assert iszero(model_f.temperature)  # temperature is not yet supported
     @assert isnothing(model_f.εF)        # neither are computations with fixed Fermi level
-
-    for k = 1:(length(basis_c_arr) - 1)
-        @assert basis_c_arr[k].Ecut < basis_c_arr[k + 1].Ecut
-    end
 
     # check that there are no virtual orbitals
     filled_occ = DFTK.filled_occupation(model_f)
@@ -113,30 +109,21 @@ DFTK.@timing function two_level_riemannian_optimization(
     # compute first residual
     Hψ_f, Λ, res, cost = initialize_cost_residual(H, ψ_f, energies.total, basis_f, cost_residual)
 
-    η = nothing
-    Rres = nothing
-    
-    cc = false
+    # restrict point and residual
+    ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
+    Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
 
-    for basis_c = basis_c_arr
-        # restrict point and residual
-        ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
-        Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
-        # calculate descent direction
-        if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, n_iter, coarse_cond)
-            ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
-            tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
-            cs = coarse_solver(basis_c)
-            ϕ_c = cs(ψ_c, ρ_c, Rres, tol_c)
-            η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
-            cc = true
-            break
-        end
-    end
-    if !cc
+    # calculate descent direction
+    if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, coarse_cond)
+        ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+        tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
+        ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+        η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
+        push!(coarse_corrections, true)
+    else
         η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+        push!(coarse_corrections, false)
     end
-    push!(coarse_corrections, cc)
 
     if (force_horizontal)
         #project search direction onto the horizontal space
@@ -200,28 +187,21 @@ DFTK.@timing function two_level_riemannian_optimization(
 
         # calculate new direction
 
-        cc = false
-    
-        # TODO: iter cond --> norm cond --> angle cond
-        for basis_c = basis_c_arr
-            # restrict point and residual
-            ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
-            Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
-            # calculate descent direction
-            if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, n_iter, coarse_cond)
-                ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
-                tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
-                cs = coarse_solver(basis_c)
-                ϕ_c = cs(ψ_c, ρ_c, Rres, tol_c)
-                η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
-                cc = true
-                break
-            end
-        end
-        if !cc
+        # restrict point and residual
+        ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
+        Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
+
+        # calculate descent direction
+        if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, coarse_cond)
+            ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+            tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
+            ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+            η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
+            push!(coarse_corrections, true)
+        else
             η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+            push!(coarse_corrections, false)
         end
-        push!(coarse_corrections, cc)
 
         if (force_horizontal)
             #project search direction onto the horizontal space
@@ -276,9 +256,6 @@ DFTK.@timing function two_level_riemannian_optimization(
 
     info
 end
-
-two_level_riemannian_optimization(basis_c::PlaneWaveBasis, basis_f::PlaneWaveBasis; kwargs...) = two_level_riemannian_optimization([basis_c], basis_f; kwargs...) 
-two_level_riemannian_optimization(basis_arr::Array; kwargs...) = two_level_riemannian_optimization(basis_arr[1:end-1], basis_arr[end]; kwargs...)
 
 
 # RCG algorithm to solve SCF equations
@@ -366,7 +343,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     coarse_tol = coarse_tol_functor(tol)
     return two_level_riemannian_optimization(basis_arr[end-1], basis_arr[end]; 
         ρ, ψ, tol, maxiter, maxiter_inner, callback, is_converged, 
-        coarse_solver = (basis) -> ml_coarse_solver,
+        coarse_solver = ml_coarse_solver,
         coarse_cond, coarse_density, coarse_tol, cost_residual, 
         point_restriction, multilevel_map, gradient,retraction, check_convergence_early, iteration_strat_fine, 
         iteration_strat_coarse, do_rayleigh_ritz, force_horizontal)

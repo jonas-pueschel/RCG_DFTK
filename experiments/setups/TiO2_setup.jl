@@ -26,7 +26,15 @@ function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1])
     model = model_LDA(lattice, atoms, positions)
     # k-point grid (Regular Monkhorst-Pack grid)
     ss = 4
-    fft_size_ref = compute_fft_size(model, Ecut; supersampling = ss)
-    basis_ref = PlaneWaveBasis(model; Ecut = Ecut, kgrid, fft_size = fft_size_ref)
-    return [model, basis_ref]
+
+    if isa(Ecut, Number)
+        fft_size_ref = compute_fft_size(model, Ecut; supersampling = ss)
+        basis = PlaneWaveBasis(model; Ecut = Ecut, kgrid, fft_size = fft_size_ref)
+        return [model, basis]
+    elseif isa(Ecut, Array)
+        basis_arr = [PlaneWaveBasis(model; Ecut = e, kgrid, fft_size = compute_fft_size(model, e; supersampling = ss)) for e = Ecut]
+        return [model, basis_arr]
+    else
+        throw("invalid type of Ecut")
+    end
 end

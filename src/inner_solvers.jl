@@ -153,6 +153,10 @@ function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSo
 
     results = Array{Matrix{ComplexF64}}(undef, Nk)
 
+    if gos.solve_horizontal
+        #TODO check if b is in horizontal space,
+        # if not, project!
+    end
 
     for (ik, Hk, bk, ψk, Σk, Pk_outer) in collect(zip(1:Nk, H.blocks, b, ψ, Σ, Pks_outer))
         c = bk
