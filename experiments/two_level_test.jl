@@ -57,6 +57,7 @@ scfres_rcg0 = RCG_DFTK.two_level_riemannian_optimization(basis_c, basis_f;
         ArmijoRule(0.1, 0.5),
         ConstantStep(1.0), 10
     ),
+        coarse_solver = (basis_c) -> ea_coarse_solver(basis_c, 10),
     do_rayleigh_ritz = false,
     );
 println(cb0.times_tot[end] / 1e9)

@@ -22,8 +22,7 @@ include("rcg_multilevel_params.jl")
 # Multilevel
 export two_level_riemannian_optimization,
     multilevel_riemannian_optimization,
-    h1_coarse_solver,
-    ea_coarse_solver
+    rcg_coarse_solver
 export AbstractVectorMultilevelMap,
     ProjectionMap,
     PseudoInverse_1_2_Map,

@@ -12,8 +12,8 @@ include("setups/silicon_setup.jl")
 include("setups/GaAs_setup.jl")
 include("setups/TiO2_setup.jl")
 
-model, basis_arr = silicon_setup(; Ecut = [15, 30, 45, 60], kgrid = [4,4,4]);
-basis_cc = basis_arr[1]
+model, basis_arr = TiO2_setup(; Ecut = [15, 30, 45, 60], kgrid = [2,2,2]);
+basis_c = basis_arr[1]
 basis_f = basis_arr[end]
 
 # Initial value
@@ -37,122 +37,138 @@ init_norm_res = RCG_DFTK.norm_DFTK(basis_f, res0)
 init_e = es0.total
 
 # Convergence tolerance
-tol = 1.0e-6;
-
-gradient_functor = (basis) -> H1Gradient(basis)
+tol = 1.0e-8;
 default_callback = RcgDefaultCallback()
-println("\nH1 4g")
+
+println("\nH1 4L")
 cb0 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[3:end]; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
+scfres_mg0 = multilevel_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
     callback = cb0,
-    gradient_functor
-    );
+    coarse_model_tol = 1e-4,
+    coarse_steps_dist = 2,
+    coarse_cond_tol = 0.6,
+    gradients = [H1Gradient(basis) for basis = basis_arr])
 println(cb0.times_tot[end] / 1e9)
-println("\nH1 2g")
+
+println("\nH1 2L")
 cb1 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
+scfres_mg1 = two_level_riemannian_optimization(basis_c, basis_f; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
     callback = cb1,
-    gradient_functor 
+    gradient = H1Gradient(basis_f),
+    coarse_solvers = [rcg_coarse_solver(basis_c, H1Gradient(basis_c),10)],
     );
 println(cb1.times_tot[end] / 1e9)
 
-println("\nH1 A2g")
+println("\nH1 A2L")
 cb2 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
+scfres_mg2 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
+    coarse_cond_tol = 0.45,
     callback = cb2,
-    gradient = gradient_functor(basis_arr[end]),
-    coarse_solver = (basis_c) -> h1_coarse_solver(basis_c, 10),
+    gradient = H1Gradient(basis_f),
+    coarse_solvers = [rcg_coarse_solver(basis_c, H1Gradient(basis_c),10) for basis_c = basis_arr[1:end-1]],
     );
 println(cb2.times_tot[end] / 1e9)
 
-gradient_functor = (basis) -> EAGradient(basis)
 
-println("\nEA 4g")
+println("\nEA 4L")
 cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = multilevel_riemannian_optimization(basis_arr[1:end]; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
+scfres_mg3 = multilevel_riemannian_optimization(basis_arr[1:end]; ψ = ψ1_f, ρ = ρ1_f, tol,
+    coarse_model_tol = 1e-4,
+    coarse_cond_tol = 0.6,
+    #multilevel_map_functor = (pr) -> ProjectionMap(), 
     callback = cb3,
-    gradient_functor
-    );
+    gradients = [EAGradient(basis) for basis = basis_arr])
 println(cb3.times_tot[end] / 1e9)
 
-println("\nEA 2g")
+println("\nEA 2L")
 cb4 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = two_level_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
+scfres_mg4 = two_level_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
+    coarse_cond_tol = 0.45,
     callback = cb4,
-    gradient = gradient_functor(basis_arr[end]),
-    coarse_solver = (basis_c) -> h1_coarse_solver(basis_c, 10),
+    coarse_cond = RCG_DFTK.EveryKCoarseCorr(2),
+    gradient = EAGradient(basis_f),
+    coarse_solvers = [rcg_coarse_solver(basis_arr[1], EAGradient(basis_arr[1]),10)]
 );
 println(cb4.times_tot[end] / 1e9)
 
-println("\nEA A2g")
+println("\nEA A2L")
 cb5 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_rcg0 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
+scfres_mg5 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
     coarse_model_tol = 1e-2,
     callback = cb5,
-    gradient = gradient_functor(basis_arr[end]),
-    coarse_solver = (basis_c) -> h1_coarse_solver(basis_c, 10),
+    gradient = EAGradient(basis_f),
+    coarse_solvers = [rcg_coarse_solver(basis_c, EAGradient(basis_c),10) for basis_c = basis_arr[1:end-1]],
     );
 println(cb5.times_tot[end] / 1e9)
 
+println("\nH1RCG")
+cb6 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+scfres_h1rcg = RCG_DFTK.h1_riemannian_conjugate_gradient(basis_f;
+    callback = cb6, ψ = ψ1, ρ = ρ1, tol);
+println(cb6.times_tot[end] / 1e9)
 
+println("\nEARCG")
+cb7 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+scfres_earcg = RCG_DFTK.energy_adaptive_riemannian_conjugate_gradient(basis_f;
+    callback = cb7, ψ = ψ1, ρ = ρ1, tol);
+println(cb7.times_tot[end] / 1e9)
 
-# # cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-# # scfres_rcg3 = RCG_DFTK.h1_riemannian_gradient(basis_f;
-# #     callback = cb3, ψ = ψ1, ρ = ρ1, tol);
-# # println(cb3.times_tot[end] / 1e9)
+println("\nSCF")
+cb8 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+scfres_scf = self_consistent_field(basis_f;
+    callback = cb8, ψ = ψ1, ρ = ρ1, tol = 0.5 * tol);
+println(cb8.times_tot[end] / 1e9)
 
-# cb4 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-# scfres_rcg4 = RCG_DFTK.energy_adaptive_riemannian_conjugate_gradient(basis_f;
-#     callback = cb4, ψ = ψ1, ρ = ρ1, tol);
-# println(cb4.times_tot[end] / 1e9)
+cbs = [cb0, cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8]
+results = [scfres_mg0, scfres_mg1, scfres_mg2, scfres_mg3, scfres_mg4, scfres_mg5, nothing, nothing, nothing]
+names = ["H1-4L", "H1-2L", "H1-a2L", "EA-4L", "EA-2L", "EA-a2L", "H1RG", "EARG", "SCF"]
 
-# # cb5 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-# # scfres_scf = self_consistent_field(basis_f;
-# #     callback = cb5, ψ = ψ1, ρ = ρ1, tol = 1e-7);
-# # println(cb5.times_tot[end] / 1e9)
+e_ref = min([min(cb.Es...)  for cb = cbs]...) 
+e_ref -= 1e-14 * min([min(cb.Es...)  for cb = cbs]...)
+#postprocessing
+for cb = cbs
+    if abs(cb.Es[end]) < 1e-8
+        continue
+    end
+    cb.Es .-= e_ref
+end
 
-# e_ref = min(cb0.Es..., cb4.Es..., ) - 1e-14
-# ml_times0 = [cb0.times_tot[pk] for pk = 2:(length(cb0.times_tot)-1) if scfres_rcg0.coarse_corrections[pk-1]]
-# ml_resls0 = [cb0.norm_residuals[pk] for pk = 2:(length(cb0.norm_residuals)-1) if scfres_rcg0.coarse_corrections[pk-1]]
-# ml_times = [cb1.times_tot[pk] for pk = 2:(length(cb1.times_tot)-1) if scfres_rcg1.coarse_corrections[pk-1]]
-# ml_resls = [cb1.norm_residuals[pk] for pk = 2:(length(cb1.norm_residuals)-1) if scfres_rcg1.coarse_corrections[pk-1]]
-# plt1 = plot(; yscale = :log, ylabel = "norm res", xlabel = "CPU time in s")
-# plot!(cb1.times_tot / 1e9, cb1.norm_residuals, label = "H1ML")
-# scatter!(ml_times/ 1e9, ml_resls, label = "coarse corr H1")
-# plot!(cb0.times_tot / 1e9, cb0.norm_residuals, label = "EAML")
-# scatter!(ml_times0/ 1e9, ml_resls0, label = "coarse corr EA")
-# plot!(cb2.times_tot / 1e9, cb2.norm_residuals, label = "H1RCG")
-# plot!(cb4.times_tot / 1e9, cb4.norm_residuals, label = "EARCG")
-# #plot!(cb3.times_tot / 1e9, cb3.norm_residuals, label = "H1RG")
-# #plot!(cb5.times_tot / 1e9, cb5.norm_residuals, label = "SCF")
-# display(plt1)
+function get_x_label(xfield)
+    return xfield == :times_tot ? "CPU time in s" : "Iterations"
+end
 
-# ml_Es0 = [cb0.Es[pk] - e_ref for pk = 2:(length(cb0.norm_residuals)-1) if scfres_rcg0.coarse_corrections[pk-1]]
-# ml_Es = [cb1.Es[pk] - e_ref for pk = 2:(length(cb1.norm_residuals)-1) if scfres_rcg1.coarse_corrections[pk-1]]
-# plt = plot(; yscale = :log, ylabel = "ΔE", xlabel = "CPU time in s")
-# plot!(cb1.times_tot / 1e9, cb1.Es.-e_ref, label = "H1ML")
-# scatter!(ml_times/ 1e9, ml_Es, label = "coarse corr H1")
-# plot!(cb0.times_tot / 1e9, cb0.Es.-e_ref, label = "EAML")
-# scatter!(ml_times0/ 1e9, ml_Es0, label = "coarse corr EA")
-# plot!(cb2.times_tot / 1e9, cb2.Es.-e_ref, label = "H1RCG")
-# plot!(cb4.times_tot / 1e9, cb4.Es.-e_ref, label = "EARCG")
-# #plot!(cb3.times_tot / 1e9, cb3.Es.-e_ref, label = "H1RG")
-# #plot!(cb5.times_tot / 1e9, cb5.Es.-e_ref, label = "SCF")
-# display(plt)
+function get_y_label(yfield)
+    return yfield == :norm_residuals ? "norm res" : "ΔE"
+end
 
-# iter = [i for i = 0:(length(cb1.norm_residuals)-1)]
-# iter0 = [i for i = 0:(length(cb0.norm_residuals)-1)]
-# plt2 = plot(; yscale = :log, ylabel = "ΔE", xlabel = "iter")
-# plot!(iter0, cb0.Es.-e_ref, label = "EAML")
-# plot!(iter, cb1.Es.-e_ref, label = "H1ML")
-# ml_iters = [iter[pk] for pk = 2:(length(cb1.times_tot)-1) if scfres_rcg1.coarse_corrections[pk-1]]
-# ml_iters0 = [iter0[pk] for pk = 2:(length(cb0.times_tot)-1) if scfres_rcg0.coarse_corrections[pk-1]]
-# scatter!(ml_iters0, ml_Es0, label = "coarse corr EA")
-# scatter!(ml_iters, ml_Es, label = "coarse corr H1")
+function generate_plot(xfield, yfield; display_plt = true)
+    plt = plot(; yscale = :log, ylabel = get_y_label(yfield), xlabel = get_x_label(xfield))
+    for (cb, res, name) = zip(cbs, results, names)
+        plot_result(cb, name, xfield, yfield; res)
+    end
+    if display_plt
+        display(plt)
+    end
+    return plt
+end
 
-# display(plt2)
+function plot_result(cb, name, xfield, yfield; res = nothing)
+    ys = getfield(cb, yfield) 
+    xs = xfield == "iter" ? [i for i = 0:(length(ys)-1)] : getfield(cb, xfield)
+    plot!(xs, ys, label = name)
+    if !isnothing(res)
+        ml_ys = [ys[k-1] for k = 2:(length(ys)-1) if res.coarse_corrections[k-1]]
+        ml_xs = [xs[k-1] for k = 2:(length(ys)-1) if res.coarse_corrections[k-1]]
+        scatter!(ml_xs, ml_ys, label = "coarse cond $name")
+    end
+end
+
+idcs = [2,5,7,8]
+cbs = cbs[idcs]
+results = results[idcs]
+names = names[idcs]
+
+generate_plot(:times_tot, :Es)

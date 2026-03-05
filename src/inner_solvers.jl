@@ -33,6 +33,17 @@ function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks, nhs::NaiveHSolver; ξ0 = no
     Nk = size(ψ)[1]
     T = Base.Float64
 
+    if nhs.solve_horizontal
+        #TODO check if b is in horizontal space,
+        # if not, project!
+        proj_b = [b[ik] - ψ[ik] * (ψ[ik]'b[ik]) for ik = 1:Nk]
+        norm_diff = norm(proj_b - b)/norm(b)
+        if norm_diff > 1e-13
+            #@warn "RHS of solve_H not in horizontal space (solve_horizontal enabled)!"
+            b = proj_b
+        end
+    end
+
     res = []
     for ik in 1:Nk
 
@@ -86,6 +97,17 @@ end
 
 function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks, bhs::BandwiseHSolver; ξ0 = nothing, Hξ0 = nothing)
     Nk = size(ψ)[1]
+
+    if bhs.solve_horizontal
+        #TODO check if b is in horizontal space,
+        # if not, project!
+        proj_b = [b[ik] - ψ[ik] * (ψ[ik]'b[ik]) for ik = 1:Nk]
+        norm_diff = norm(proj_b - b)/norm(b)
+        if norm_diff > 1e-13
+            #@warn "RHS of solve_H not in horizontal space (solve_horizontal enabled)!"
+            b = proj_b
+        end
+    end
 
     res = []
     for ik in 1:Nk
@@ -156,6 +178,12 @@ function solve_H(H, b, Σ, ψ, Hψ, itmax, tol, Pks_outer, gos::GlobalOptimalHSo
     if gos.solve_horizontal
         #TODO check if b is in horizontal space,
         # if not, project!
+        proj_b = [b[ik] - ψ[ik] * (ψ[ik]'b[ik]) for ik = 1:Nk]
+        norm_diff = norm(proj_b - b)/norm(b)
+        if norm_diff > 1e-13
+            #@warn "RHS of solve_H not in horizontal space (solve_horizontal enabled)!"
+            b = proj_b
+        end
     end
 
     for (ik, Hk, bk, ψk, Σk, Pk_outer) in collect(zip(1:Nk, H.blocks, b, ψ, Σ, Pks_outer))

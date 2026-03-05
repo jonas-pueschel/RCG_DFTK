@@ -112,7 +112,7 @@ mutable struct EAGradient <: AbstractGradient
     const naive_formula::Bool
     Hinv_ψ
 end
-function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
+function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, horizontal = true, h_solver = GlobalOptimalHSolver(;solve_horizontal = horizontal), Pks = nothing, naive_formula = false) where {T}
     if isnothing(Pks)
         Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
     end

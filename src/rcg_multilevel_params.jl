@@ -16,10 +16,6 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::ApproxCoarseGridCos
     Rres = - cgcr.wk
     cgcr.wk += res
 
-    d1 = inner_product_DFTK(basis, Rres, res)
-    d2 = norm_DFTK(basis, Rres) * norm_DFTK(basis, res)
-    println("quot: $(d1/d2)")
-
     return Hψ, Λ, Rres, e_tot
 end
 
@@ -54,6 +50,11 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::CoarseGridCostResid
 
     Rres = - cgcr.wk
     cgcr.wk += res
+
+    d1 = inner_product_DFTK(basis, Rres, res)
+    d2 = norm_DFTK(basis, Rres) * norm_DFTK(basis, res)
+    d3 = norm_DFTK(basis, Rres) / norm_DFTK(basis, res)
+    println("Ecut = $(basis.Ecut); quot: $(d1/d2); normquot $d3")
 
     return Hψ, Λ, Rres, e_tot
 end
@@ -284,7 +285,7 @@ mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
 end
 
 function EveryKCoarseCorr(k)
-    return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k)
+    return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k-1)
 end
 
 function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ, res, Rres, n_iter, cc::ToleranceMinStepCoarseCondition) where {T}
