@@ -46,7 +46,7 @@ function (callback::ResidualEvalCallback)(info)
             Λ = [ψk'Hψ[ik] for (ik, ψk) in enumerate(ψ)]
             Λ = 0.5 * [(Λk + Λk') for (ik, Λk) in enumerate(Λ)]
             res = [Hψ[ik] - ψk * Λ[ik] for (ik, ψk) in enumerate(ψ)]
-            norm_res = norm(res)
+            norm_res = norm_DFTK(info.basis, res)
         catch
             # selection of occupied orbitals failed. TODO What to do?
             # do nothing?
@@ -290,12 +290,14 @@ function (cb::TrackResTimeCallback)(info)
         basis = info.basis
         occupation = info.occupation
 
+        # TODO: is this line actually doing anything? Seems that we may need to 
+        # use the non-fractional occupation here 
         ψ = DFTK.select_occupied_orbitals(basis, ψ, occupation).ψ
         Hψ = [H.blocks[ik] * ψk for (ik, ψk) in enumerate(ψ)]
         Λ = [ψk'Hψ[ik] for (ik, ψk) in enumerate(ψ)]
         Λ = 0.5 * [(Λk + Λk') for (ik, Λk) in enumerate(Λ)]
         res = [Hψ[ik] - ψk * Λ[ik] for (ik, ψk) in enumerate(ψ)]
-        norm_res = norm(res)
+        norm_res = norm_DFTK(basis, res)
         time_err_end = Int(time_ns())
         push!(cb.norm_residuals, norm_res)
         cb.err_time += (time_err_end - time_err_start)

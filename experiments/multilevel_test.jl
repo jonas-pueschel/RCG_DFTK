@@ -3,6 +3,10 @@ using RCG_DFTK
 using PseudoPotentialData
 using LinearAlgebra
 using Plots
+using BSON
+
+include("plot_ml_test.jl")
+include("multires.jl")
 
 # this script forces precompliation for all methods, ensuring comparability in runtime
 # include("precompile_methods.jl");
@@ -12,21 +16,23 @@ include("setups/silicon_setup.jl")
 include("setups/GaAs_setup.jl")
 include("setups/TiO2_setup.jl")
 
-model, basis_arr = TiO2_setup(; Ecut = [15, 30, 45, 60], kgrid = [2,2,2]);
+
+Ecuts = [10, 16, 25, 40, 63, 101, 160]
+model, basis_arr = TiO2_setup(; Ecut = Ecuts, kgrid = [2,2,2]); 
+model_name = "TiO2"
 basis_c = basis_arr[1]
 basis_f = basis_arr[end]
 
 # Initial value
-# scfres_start = self_consistent_field(basis_c; tol = 0.5e-1, nbandsalg = DFTK.FixedBands(basis_c.model));
-# ψ1_c = DFTK.select_occupied_orbitals(basis_c, scfres_start.ψ, scfres_start.occupation).ψ;
-# ρ1_c = scfres_start.ρ
-# ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_f, ψ1_c)
-# ρ1 = DFTK.interpolate_density(ρ1_c, basis_c, basis_f)
-scfres_start = self_consistent_field(basis_f; tol = 1e-1, nbandsalg = DFTK.FixedBands(basis_f.model));
-ψ1_f = DFTK.select_occupied_orbitals(basis_f, scfres_start.ψ, scfres_start.occupation).ψ;
-ρ1_f = scfres_start.ρ
-ψ1 = ψ1_f
-ρ1 = ρ1_f
+scfres_start = self_consistent_field(basis_c; tol = 1e-8);
+ψ1_c = DFTK.select_occupied_orbitals(basis_c, scfres_start.ψ, scfres_start.occupation).ψ;
+ρ1_c = scfres_start.ρ
+ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_f, ψ1_c)
+ρ1 = DFTK.compute_density(basis_f, ψ1, get_occ(basis_f))
+#DFTK.interpolate_density(ρ1_c, basis_c, basis_f)
+# scfres_start = self_consistent_field(basis_f; tol = 1e-1, nbandsalg = DFTK.FixedBands(basis_f.model));
+# ψ1 = DFTK.select_occupied_orbitals(basis_f, scfres_start.ψ, scfres_start.occupation).ψ;
+# ρ1 = scfres_start.ρ
 
 # scfres_ref = self_consistent_field(basis_f; tol = 1e-10);
 # e_ref = scfres_ref.energies.total 
@@ -40,135 +46,177 @@ init_e = es0.total
 tol = 1.0e-8;
 default_callback = RcgDefaultCallback()
 
-println("\nH1 4L")
-cb0 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg0 = multilevel_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
-    callback = cb0,
-    coarse_model_tol = 1e-4,
-    coarse_steps_dist = 2,
-    coarse_cond_tol = 0.6,
-    gradients = [H1Gradient(basis) for basis = basis_arr])
-println(cb0.times_tot[end] / 1e9)
+cbs = []
+ccs_arr = []
+names = []
+emin = 1000
 
-println("\nH1 2L")
-cb1 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg1 = two_level_riemannian_optimization(basis_c, basis_f; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
-    callback = cb1,
-    gradient = H1Gradient(basis_f),
-    coarse_solvers = [rcg_coarse_solver(basis_c, H1Gradient(basis_c),10)],
-    );
-println(cb1.times_tot[end] / 1e9)
+result2ccs(result) = haskey(result, :coarse_corrections) ? result.coarse_corrections : nothing;
 
-println("\nH1 A2L")
-cb2 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg2 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
-    coarse_cond_tol = 0.45,
-    callback = cb2,
-    gradient = H1Gradient(basis_f),
-    coarse_solvers = [rcg_coarse_solver(basis_c, H1Gradient(basis_c),10) for basis_c = basis_arr[1:end-1]],
-    );
-println(cb2.times_tot[end] / 1e9)
+for grad_name = ["EA", "H1"]
+    gradient_functor(basis) = grad_name == "H1" ? H1Gradient(basis) : EAGradient(basis);
+
+    cbs = []
+    ccs_arr = []
+    names = []
+
+    name = "$(grad_name) 7L"
+    println("\n$name")
+
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = multilevel_riemannian_optimization(basis_arr; ψ = ψ1, ρ = ρ1, tol,
+        callback = cb,
+        coarse_model_tol = 1e-2,
+        coarse_cond_tol = 0.45,
+        gradients = [gradient_functor(basis) for basis = basis_arr])
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
 
-println("\nEA 4L")
-cb3 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg3 = multilevel_riemannian_optimization(basis_arr[1:end]; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-4,
-    coarse_cond_tol = 0.6,
-    #multilevel_map_functor = (pr) -> ProjectionMap(), 
-    callback = cb3,
-    gradients = [EAGradient(basis) for basis = basis_arr])
-println(cb3.times_tot[end] / 1e9)
+    name = "$(grad_name) 4L"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = multilevel_riemannian_optimization(basis_arr[[1,3,5,7]]; ψ = ψ1, ρ = ρ1, tol,
+        callback = cb,
+        coarse_model_tol = 1e-2,
+        coarse_cond_tol = 0.45,
+        gradients = [gradient_functor(basis) for basis = basis_arr[[1,3,5,7]]])
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
-println("\nEA 2L")
-cb4 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg4 = two_level_riemannian_optimization(basis_arr[[1,end]]; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
-    coarse_cond_tol = 0.45,
-    callback = cb4,
-    coarse_cond = RCG_DFTK.EveryKCoarseCorr(2),
-    gradient = EAGradient(basis_f),
-    coarse_solvers = [rcg_coarse_solver(basis_arr[1], EAGradient(basis_arr[1]),10)]
-);
-println(cb4.times_tot[end] / 1e9)
+    name = "$(grad_name) 3L"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = multilevel_riemannian_optimization(basis_arr[[1,4,7]]; ψ = ψ1, ρ = ρ1, tol,
+        callback = cb,
+        coarse_model_tol = 1e-2,
+        coarse_cond_tol = 0.45,
+        gradients = [gradient_functor(basis) for basis = basis_arr[[1,4,7]]])
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
-println("\nEA A2L")
-cb5 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_mg5 = two_level_riemannian_optimization(basis_arr; ψ = ψ1_f, ρ = ρ1_f, tol,
-    coarse_model_tol = 1e-2,
-    callback = cb5,
-    gradient = EAGradient(basis_f),
-    coarse_solvers = [rcg_coarse_solver(basis_c, EAGradient(basis_c),10) for basis_c = basis_arr[1:end-1]],
-    );
-println(cb5.times_tot[end] / 1e9)
+    name = "$(grad_name) 2L"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = two_level_riemannian_optimization(basis_c, basis_f; ψ = ψ1, ρ = ρ1, tol,
+        coarse_model_tol = 1e-2,
+        coarse_cond_tol = 0.45,
+        iteration_strat_fine = StandardBacktracking(
+            ArmijoRule(0.1, 0.5),
+            ConstantStep(1.0), 10
+        ),
+        callback = cb,
+        gradient = gradient_functor(basis_f),
+        gradient_c = gradient_functor(basis_c),
+        );
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
-println("\nH1RCG")
-cb6 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_h1rcg = RCG_DFTK.h1_riemannian_conjugate_gradient(basis_f;
-    callback = cb6, ψ = ψ1, ρ = ρ1, tol);
-println(cb6.times_tot[end] / 1e9)
+    name = "$(grad_name) 4R"
+    println("\n$name")
+    tols = [100 * tol,  10*tol, tol]
+    bsel = [3,5,7]
+    cb, result = multires(basis_arr[bsel], ψ1, ρ1, tols, init_norm_res, init_e; gradient_functor)
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
-println("\nEARCG")
-cb7 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_earcg = RCG_DFTK.energy_adaptive_riemannian_conjugate_gradient(basis_f;
-    callback = cb7, ψ = ψ1, ρ = ρ1, tol);
-println(cb7.times_tot[end] / 1e9)
+    name = "$(grad_name)RCG"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = RCG_DFTK.riemannian_conjugate_gradient(basis_f;
+        callback = cb, ψ = ψ1, ρ = ρ1, tol, gradient = gradient_functor(basis_f));
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
-println("\nSCF")
-cb8 = TrackResTimeCallback(default_callback, init_norm_res, init_e)
-scfres_scf = self_consistent_field(basis_f;
-    callback = cb8, ψ = ψ1, ρ = ρ1, tol = 0.5 * tol);
-println(cb8.times_tot[end] / 1e9)
-
-cbs = [cb0, cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8]
-results = [scfres_mg0, scfres_mg1, scfres_mg2, scfres_mg3, scfres_mg4, scfres_mg5, nothing, nothing, nothing]
-names = ["H1-4L", "H1-2L", "H1-a2L", "EA-4L", "EA-2L", "EA-a2L", "H1RG", "EARG", "SCF"]
-
-e_ref = min([min(cb.Es...)  for cb = cbs]...) 
-e_ref -= 1e-14 * min([min(cb.Es...)  for cb = cbs]...)
-#postprocessing
-for cb = cbs
-    if abs(cb.Es[end]) < 1e-8
-        continue
+    emin = min(min([min(cb.Es...)  for cb = cbs]...), emin)
+    err = 1e-15
+    refval = max([cbb.Es[1] for cbb = cbs]...)
+    for cb = cbs
+        if emin < 0
+            cb.Es .+= (err - emin)
+            continue
+        end
+        if abs(cb.Es[end]) < 1e-12
+            continue
+        end
+        if cb.Es[1] != refval
+            cb.Es .+= (refval - cb.Es[1])
+        else
+            cb.Es .+= (err - emin)
+        end
     end
-    cb.Es .-= e_ref
-end
 
-function get_x_label(xfield)
-    return xfield == :times_tot ? "CPU time in s" : "Iterations"
-end
+    BSON.@save "$model_name-$grad_name-results.bson" cbs ccs_arr names Ecuts
 
-function get_y_label(yfield)
-    return yfield == :norm_residuals ? "norm res" : "ΔE"
-end
-
-function generate_plot(xfield, yfield; display_plt = true)
-    plt = plot(; yscale = :log, ylabel = get_y_label(yfield), xlabel = get_x_label(xfield))
-    for (cb, res, name) = zip(cbs, results, names)
-        plot_result(cb, name, xfield, yfield; res)
-    end
-    if display_plt
-        display(plt)
-    end
-    return plt
-end
-
-function plot_result(cb, name, xfield, yfield; res = nothing)
-    ys = getfield(cb, yfield) 
-    xs = xfield == "iter" ? [i for i = 0:(length(ys)-1)] : getfield(cb, xfield)
-    plot!(xs, ys, label = name)
-    if !isnothing(res)
-        ml_ys = [ys[k-1] for k = 2:(length(ys)-1) if res.coarse_corrections[k-1]]
-        ml_xs = [xs[k-1] for k = 2:(length(ys)-1) if res.coarse_corrections[k-1]]
-        scatter!(ml_xs, ml_ys, label = "coarse cond $name")
+    i = 1
+    for xfield = ["iter", :times_tot]
+        for yfield =  [:norm_residuals, :Es]
+            #generate_plot(cbs, ccs_arr, names, xfield, yfield);
+            st = generate_plot_tikz(cbs, ccs_arr, names, xfield, yfield);
+            io = open("$model_name-$grad_name-plt$i.tex", "w"); write(io, st); close(io)
+            i += 1
+        end
     end
 end
 
-idcs = [2,5,7,8]
-cbs = cbs[idcs]
-results = results[idcs]
-names = names[idcs]
+begin
+    #SCF
+    cbs = []
+    ccs_arr = []
+    names = []
 
-generate_plot(:times_tot, :Es)
+
+    name = "SCF"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = self_consistent_field(basis_f;
+        callback = cb, ψ = ψ1, ρ = ρ1, tol = 0.5 * tol);
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
+
+    name = "SCF 4R"
+    println("\n$name")
+    tols = [100 * tol,  10*tol, tol]
+    bsel = [3,5,7]
+    cb, result = multires(basis_arr[bsel], ψ1, ρ1, tols, init_norm_res, init_e; 
+        coarse_solver = (basis, ψ1, ρ1, tolerance, callback) ->  self_consistent_field(
+            basis;
+            ψ = ψ1, 
+            ρ = ρ1,
+            tol = tolerance * 0.5,
+            callback
+        ))
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
+
+    emin = min(min([min(cb.Es...)  for cb = cbs]...), emin)
+    err = 1e-15
+    refval = max([cbb.Es[1] for cbb = cbs]...)
+    for cb = cbs
+        if emin < 0
+            cb.Es .+= (err - emin)
+            continue
+        end
+        if abs(cb.Es[end]) < 1e-12
+            continue
+        end
+        if cb.Es[1] != refval
+            cb.Es .+= (refval - cb.Es[1])
+        else
+            cb.Es .+= (err - emin)
+        end
+    end
+
+    BSON.@save "$model_name-SCF-results.bson" cbs ccs_arr names Ecuts
+
+    # i = 1
+    # for xfield = ["iter", :times_tot]
+    #     for yfield =  [:norm_residuals, :Es]
+    #         #generate_plot(cbs, ccs_arr, names, xfield, yfield);
+    #         st = generate_plot_tikz(cbs, ccs_arr, names, xfield, yfield);
+    #         io = open("$model_name-$grad_name-plt$i.tex", "w"); write(io, st); close(io)
+    #         i += 1
+    #     end
+    # end
+
+end

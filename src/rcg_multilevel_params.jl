@@ -56,6 +56,8 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::CoarseGridCostResid
     d3 = norm_DFTK(basis, Rres) / norm_DFTK(basis, res)
     println("Ecut = $(basis.Ecut); quot: $(d1/d2); normquot $d3")
 
+
+
     return Hψ, Λ, Rres, e_tot
 end
 

@@ -661,11 +661,15 @@ end
 struct ArmijoRule <: AbstractBacktrackingRule
     β::Float64
     δ::Float64
+    ϵ::Float64
+end
+function ArmijoRule(β, δ)
+    return ArmijoRule(β, δ, 1e-14)
 end
 function check_rule(basis, E_current, desc_current, next, rule::ArmijoRule)
     #small correction if change in energy is small TODO: better workaround.
     E_next = next.cost_next
-    return E_next <= E_current + (rule.β * next.τ * desc_current)
+    return E_next <= E_current + (rule.β * next.τ * desc_current) + rule.ϵ * abs(E_current)
 end
 function backtrack(next, rule::ArmijoRule)
     return rule.δ * next.τ
