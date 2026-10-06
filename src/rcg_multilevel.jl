@@ -19,7 +19,7 @@ rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, coarse
     return result.ψ
 end
 
-# RCG algorithm to solve SCF equations
+# 2 level riemannian optimization algorithm
 DFTK.@timing function two_level_riemannian_optimization(
     basis_c::PlaneWaveBasis{T},
     basis_f::PlaneWaveBasis{T};
@@ -29,16 +29,18 @@ DFTK.@timing function two_level_riemannian_optimization(
     callback = RcgDefaultCallback(),
     is_converged = RcgConvergenceResidual(tol),
     gradient_c = EAGradient(basis_c),
-    coarse_solver = rcg_coarse_solver(basis_c, gradient_c, maxiter_inner),
-    coarse_cond_tol = 0.45,
-    coarse_cond = ToleranceMinStepCoarseCondition(coarse_cond_tol, tol),
-    coarse_density = RecalculateDensity(),
     coarse_cost_residual = CoarseGridCostResidual,
+    coarse_solver = rcg_coarse_solver(basis_c, gradient_c, maxiter_inner; coarse_cost_residual),
+    coarse_cond_tol = 0.45,
+    coarse_steps_dist = 1,
+    force_post_smoothing = false,
+    coarse_cond = ToleranceMinStepCoarseCondition(coarse_cond_tol, tol; dist = coarse_steps_dist),
+    coarse_density = RecalculateDensity(),
     coarse_model_tol = 1e-2,
     coarse_tol = RelativeResTolerance(coarse_model_tol, tol),
     cost_residual = StandardCostResiudal(),
     point_restriction = ProjectiveRestriction(),
-    multilevel_map = PseudoInverse_1_2_Map(point_restriction),
+    multilevel_map = AlgebraicMap(point_restriction),
     gradient = EAGradient(basis_f),
     retraction = RetractionPolar(),
     check_convergence_early = true, 
@@ -105,7 +107,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
     Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
     # calculate descent direction
-    if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, n_iter, coarse_cond)
+    if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
         ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
         tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
         ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
@@ -113,6 +115,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         cc = true
     else 
         η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+        #println("Ecut: $(basis_f.Ecut); gradient step")
     end
     push!(coarse_corrections, cc)
 
@@ -127,7 +130,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         ham = H, ψ = ψ_f, res, Rres, η, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = nothing, ρout = ρ_f, coarse_corrections, n_iter,
         energies, cost, algorithm = "2gRG",
     )
-    #callback(info)
+    check_convergence_early || callback(info)
 
     τ = nothing
 
@@ -163,7 +166,7 @@ DFTK.@timing function two_level_riemannian_optimization(
                 energies, cost, start_ns, algorithm = "2gRG",
             )
             callback(info)
-            if is_converged(info)
+            if is_converged(info) && (!force_post_smoothing || !coarse_corrections[end])
                 break
             end
         end
@@ -177,17 +180,17 @@ DFTK.@timing function two_level_riemannian_optimization(
         ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
         Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
         # calculate descent direction
-        if check_coarse_condition(basis_c, basis_f, ψ_f, res, Rres, n_iter, coarse_cond)
+        if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
             ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
             tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
             ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
             η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
             cc = true
-
         end
 
         if !cc
             η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+            #println("Ecut: $(basis_f.Ecut); gradient step")
         end
         push!(coarse_corrections, cc)
 
@@ -198,7 +201,7 @@ DFTK.@timing function two_level_riemannian_optimization(
                 energies, cost, start_ns, algorithm = "2gRG",
             )
             callback(info)
-            if is_converged(info)
+            if is_converged(info) && (!force_post_smoothing || !coarse_corrections[end-1])
                 break
             end
         end
@@ -248,13 +251,14 @@ DFTK.@timing function multilevel_riemannian_optimization(
     basis_arr::Vector;
     ρ = guess_density(basis_arr[end]),
     ψ = nothing,
-    tol = 1.0e-6, maxiter = 100, maxiter_inner = 10,
+    tol = 1.0e-6, maxiter = 100, maxiter_inner = 100,
     callback = RcgDefaultCallback(),
     callback_mid = (info) -> nothing,
     callback_coarse = (info) -> nothing,
     is_converged = RcgConvergenceResidual(tol),
     coarse_cond_tol = 0.45,
     coarse_steps_dist = 1,
+    force_post_smoothing = false,
     coarse_cond_functor = (tol) -> ToleranceMinStepCoarseCondition(coarse_cond_tol, tol; dist = coarse_steps_dist),
     coarse_density = RecalculateDensity(),
     coarse_cost_residual = CoarseGridCostResidual,
@@ -263,7 +267,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     cost_residual = StandardCostResiudal(),
     gradients = [EAGradient(basis) for basis = basis_arr],
     point_restriction_functor = () -> ProjectiveRestriction(),
-    multilevel_map_functor = (point_restriction) -> PseudoInverse_1_2_Map(point_restriction),
+    multilevel_map_functor = (point_restriction) -> AlgebraicMap(point_restriction),
     retraction_functor = () -> RetractionPolar(),
     check_convergence_early = true, 
     iteration_strats_fine = [StandardBacktracking(
@@ -293,6 +297,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
                 callback = callback_mid,
                 is_converged = RcgConvergenceResidual(tol), #TODO what to use here?
                 coarse_cond_functor,
+                force_post_smoothing,
                 coarse_density,
                 coarse_cost_residual,
                 coarse_tol_functor,
@@ -317,6 +322,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     return two_level_riemannian_optimization(basis_arr[end-1], basis_arr[end]; 
         ρ, ψ, tol, maxiter, maxiter_inner, callback, is_converged, 
         coarse_solver = ml_coarse_solver,
+        force_post_smoothing,
         coarse_cond, coarse_density, coarse_tol, cost_residual, 
         point_restriction, multilevel_map, gradient,retraction, check_convergence_early, 
         iteration_strat_fine = iteration_strats_fine[end], 

@@ -19,6 +19,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         ),
         do_rayleigh_ritz = true
     ) where {T}
+    #println("Ecut: $(basis.Ecut) solve RCG")
+
     start_ns = time_ns()
     # setting parameters
     model = basis.model

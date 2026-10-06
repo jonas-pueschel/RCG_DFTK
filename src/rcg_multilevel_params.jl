@@ -54,7 +54,7 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::CoarseGridCostResid
     d1 = inner_product_DFTK(basis, Rres, res)
     d2 = norm_DFTK(basis, Rres) * norm_DFTK(basis, res)
     d3 = norm_DFTK(basis, Rres) / norm_DFTK(basis, res)
-    println("Ecut = $(basis.Ecut); quot: $(d1/d2); normquot $d3")
+    #println("Ecut = $(basis.Ecut); quot: $(d1/d2); normquot $d3")
 
 
 
@@ -206,36 +206,45 @@ function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T
     return proj_TSt(ψ_f, v)
 end
 
-mutable struct PseudoInverse_1_2_Map <: AbstractVectorMultilevelMap
+mutable struct AlgebraicMap <: AbstractVectorMultilevelMap
     pr::ProjectiveRestriction
 end
 
-function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, pim::PseudoInverse_1_2_Map) where {T}
+function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, am::AlgebraicMap) where {T}
     Nk = length(v)
     w = interpolate_f2c(basis_c, basis_f, v)
-    w = [w[ik] * pim.pr.Sf[ik] for ik = 1:Nk]
+    w = [w[ik] * am.pr.Sf[ik] for ik = 1:Nk]
     return proj_TSt(ψ_c, w)
 end
 
-function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, w, pim::PseudoInverse_1_2_Map) where {T}
+function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, w, am::AlgebraicMap) where {T}
     Nk = length(w)
     v = interpolate_c2f(basis_c, basis_f, w)
-    return [v[ik] * pim.pr.Sf[ik] for ik = 1:Nk]
+    return [v[ik] * am.pr.Sf[ik] for ik = 1:Nk]
 end
 
-mutable struct MoorePenroseMap <: AbstractVectorMultilevelMap
+mutable struct GeometricMap <: AbstractVectorMultilevelMap
     pr::ProjectiveRestriction
 end
 
-function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, ::MoorePenroseMap) where {T}
-    # TODO
+function restrict_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, v, gm::GeometricMap) where {T}
+    Nk = length(v)
+    w = interpolate_f2c(basis_c, basis_f, v)
+    Mtx_rhs = [w[ik]' * ψ_c[ik] for ik = 1:Nk]
+    Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
+    Xv = [lyap(gm.pr.Sfinv[ik], -Mtx_rhs[ik]) for ik = 1:Nk]
+    return [(w[ik] - ψ_c[ik] * Xv[ik])* gm.pr.Sfinv[ik]  for ik = 1:Nk]
 end
 
-function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, w, ::MoorePenroseMap) where {T}
-    # TODO
+function prolongate_vector(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, w, gm::GeometricMap) where {T}
+    Nk = length(w)
+    v = interpolate_c2f(basis_c, basis_f, w)
+    Iψ = interpolate_c2f(basis_c, basis_f, ψ_c)
+    Mtx_rhs = [(ψ_c[ik]' * w[ik]) *  gm.pr.Sfinv[ik] for ik = 1:Nk]
+    Mtx_rhs = [Mtx_rhs[ik]' + Mtx_rhs[ik] for ik = 1:Nk]
+    v = [v[ik] * gm.pr.Sfinv[ik] - Iψ[ik] *  lyap(gm.pr.Sfinv[ik], -Mtx_rhs[ik]) for ik = 1:Nk]
+    return proj_TSt(ψ_f, v)
 end
-
-
 
 function invRet(ψ,z)
     Nk = size(ψ)[1]
@@ -281,7 +290,6 @@ mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
     dist
     n_iter
     function ToleranceMinStepCoarseCondition(η, ϵ; dist = 1)
-        # we enforce that the very first step is always a gradient step
         return new(η, ϵ, nothing, dist, 0)
     end
 end
@@ -290,13 +298,15 @@ function EveryKCoarseCorr(k)
     return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k-1)
 end
 
-function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ, res, Rres, n_iter, cc::ToleranceMinStepCoarseCondition) where {T}
+function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::ToleranceMinStepCoarseCondition) where {T}
+    Iψ_c = interpolate_c2f(basis_c, basis_f, ψ_c)
+    #println("dist: $(norm_DFTK(basis_f, Iψ_c - ψ_f))")
     if (cc.n_iter > n_iter)
         return false
     end
     c1 = norm_DFTK(basis_c, Rres) ≥ cc.η * norm_DFTK(basis_f, res) 
-    c2 = isnothing(cc.ψ_c) ? true : norm_DFTK(basis_f, cc.ψ_c - ψ) > cc.ϵ
-    (c1 && c2) && (cc.ψ_c = ψ)
+    c2 = isnothing(cc.ψ_c) ? true : norm_DFTK(basis_f, cc.ψ_c - ψ_c) > cc.ϵ
+    (c1 && c2) && (cc.ψ_c = ψ_c)
     (c1 && c2) && (cc.n_iter = n_iter + cc.dist + 1)
     return c1 && c2
 end
@@ -335,4 +345,3 @@ end
 function get_coarse_tol(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, Rres, res, rrt::RelativeResTolerance) where {T}
     return max(norm_DFTK(basis_c, Rres) * rrt.μ, rrt.tol)
 end
-

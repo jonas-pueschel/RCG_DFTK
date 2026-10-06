@@ -308,3 +308,7 @@ function (cb::TrackResTimeCallback)(info)
     push!(cb.Es, info.energies.total)
     return cb.default_callback(info)
 end
+
+function to_named_tuple(cb::TrackResTimeCallback)
+    return (;Es = cb.Es, norm_residuals = cb.norm_residuals, times_tot = cb.times_tot)
+end

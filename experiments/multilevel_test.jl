@@ -5,7 +5,7 @@ using LinearAlgebra
 using Plots
 using BSON
 
-include("plot_ml_test.jl")
+#include("plot_ml_test.jl")
 include("multires.jl")
 
 # this script forces precompliation for all methods, ensuring comparability in runtime
@@ -18,8 +18,9 @@ include("setups/TiO2_setup.jl")
 
 
 Ecuts = [10, 16, 25, 40, 63, 101, 160]
-model, basis_arr = TiO2_setup(; Ecut = Ecuts, kgrid = [2,2,2]); 
-model_name = "TiO2"
+
+model, basis_arr = silicon_setup(; Ecut = Ecuts, kgrid = [4,4,4]); 
+model_name = "silicon"
 basis_c = basis_arr[1]
 basis_f = basis_arr[end]
 
@@ -42,18 +43,19 @@ es0 ,res0 = RCG_DFTK.init_E_res(ψ1, ρ1, basis_f)
 init_norm_res = RCG_DFTK.norm_DFTK(basis_f, res0)
 init_e = es0.total
 
-# Convergence tolerance
-tol = 1.0e-8;
+
 default_callback = RcgDefaultCallback()
 
 cbs = []
 ccs_arr = []
 names = []
 emin = 1000
+# Convergence tolerance
+tol = 1.0e-8;
 
 result2ccs(result) = haskey(result, :coarse_corrections) ? result.coarse_corrections : nothing;
 
-for grad_name = ["EA", "H1"]
+for grad_name = ["H1"] # ["EA", "H1"]
     gradient_functor(basis) = grad_name == "H1" ? H1Gradient(basis) : EAGradient(basis);
 
     cbs = []
@@ -68,6 +70,7 @@ for grad_name = ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
+        coarse_tol_functor = (tol) -> RCG_DFTK.RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
@@ -80,6 +83,7 @@ for grad_name = ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
+            coarse_tol_functor = (tol) -> RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr[[1,3,5,7]]])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
@@ -91,6 +95,7 @@ for grad_name = ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
+            coarse_tol_functor = (tol) -> RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr[[1,4,7]]])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
@@ -101,6 +106,7 @@ for grad_name = ["EA", "H1"]
     result = two_level_riemannian_optimization(basis_c, basis_f; ψ = ψ1, ρ = ρ1, tol,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
+        coarse_tol = RelativeResTolerance(1e-2),
         iteration_strat_fine = StandardBacktracking(
             ArmijoRule(0.1, 0.5),
             ConstantStep(1.0), 10
@@ -128,6 +134,17 @@ for grad_name = ["EA", "H1"]
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
+    name = "$(grad_name)RG"
+    println("\n$name")
+    cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
+    result = RCG_DFTK.riemannian_conjugate_gradient(basis_f;
+        iteration_strat = StandardBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), BarzilaiBorweinStep(0.1, 2.5, ConstantStep(1.0)), 10),
+        cg_param = ParamZero(),
+        callback = cb, ψ = ψ1, ρ = ρ1, tol, gradient = gradient_functor(basis_f));
+    println(cb.times_tot[end] / 1e9)
+    push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
+
+
     emin = min(min([min(cb.Es...)  for cb = cbs]...), emin)
     err = 1e-15
     refval = max([cbb.Es[1] for cbb = cbs]...)
@@ -146,17 +163,19 @@ for grad_name = ["EA", "H1"]
         end
     end
 
-    BSON.@save "$model_name-$grad_name-results.bson" cbs ccs_arr names Ecuts
+    cbs_arr = [RCG_DFTK.to_named_tuple(cb) for cb = cbs]
 
-    i = 1
-    for xfield = ["iter", :times_tot]
-        for yfield =  [:norm_residuals, :Es]
-            #generate_plot(cbs, ccs_arr, names, xfield, yfield);
-            st = generate_plot_tikz(cbs, ccs_arr, names, xfield, yfield);
-            io = open("$model_name-$grad_name-plt$i.tex", "w"); write(io, st); close(io)
-            i += 1
-        end
-    end
+    BSON.@save "$model_name-$grad_name-results.bson" cbs_arr ccs_arr names Ecuts
+
+    # i = 1
+    # for xfield = ["iter", :times_tot]
+    #     for yfield =  [:norm_residuals, :Es]
+    #         #generate_plot(cbs, ccs_arr, names, xfield, yfield);
+    #         #st = generate_plot_tikz(cbs, ccs_arr, names, xfield, yfield);
+    #         io = open("$model_name-$grad_name-plt$i.tex", "w"); write(io, st); close(io)
+    #         i += 1
+    #     end
+    # end
 end
 
 begin
@@ -170,7 +189,7 @@ begin
     println("\n$name")
     cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
     result = self_consistent_field(basis_f;
-        callback = cb, ψ = ψ1, ρ = ρ1, tol = 0.5 * tol);
+        callback = cb, ψ = ψ1, ρ = ρ1, tol = 0.1 * tol);
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
 
@@ -178,7 +197,7 @@ begin
     println("\n$name")
     tols = [100 * tol,  10*tol, tol]
     bsel = [3,5,7]
-    cb, result = multires(basis_arr[bsel], ψ1, ρ1, tols, init_norm_res, init_e; 
+    cb, result = multires(basis_arr[bsel], ψ1, ρ1, tols * 0.1, init_norm_res, init_e; 
         coarse_solver = (basis, ψ1, ρ1, tolerance, callback) ->  self_consistent_field(
             basis;
             ψ = ψ1, 
@@ -207,7 +226,9 @@ begin
         end
     end
 
-    BSON.@save "$model_name-SCF-results.bson" cbs ccs_arr names Ecuts
+    cbs_arr = [RCG_DFTK.to_named_tuple(cb) for cb = cbs]
+
+    BSON.@save "$model_name-SCF-results.bson" cbs_arr ccs_arr names Ecuts
 
     # i = 1
     # for xfield = ["iter", :times_tot]
