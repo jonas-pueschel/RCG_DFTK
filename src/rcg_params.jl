@@ -6,6 +6,38 @@ function inner_product_DFTK(basis, ξ, η)
     return real(sum(ξη))
 end
 
+function norm_DFTK(basis, ξ)
+    n_cols = size(ξ[1])[2]
+    Nk = size(ξ)[1]
+
+    ξ2 = [dot(ξ[ik], ξ[ik]) for ik in 1:Nk] .* basis.kweights * n_cols
+    return sqrt(real(sum(ξ2)))
+end
+
+abstract type AbstractCostResidual end
+
+struct StandardCostResiudal <: AbstractCostResidual end
+
+function initialize_cost_residual(H , ψ, e_tot, basis, cgcr::StandardCostResiudal)
+    Nk = size(ψ)[1]
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return Hψ, Λ, res, e_tot
+end
+
+function calculate_cost_residual(H , ψ, e_tot, basis, ::StandardCostResiudal)
+    Nk = size(ψ)[1]
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return Hψ, Λ, res, e_tot
+end
+
 abstract type AbstractGradient end
 
 struct RiemannianGradient <: AbstractGradient
@@ -51,7 +83,7 @@ end
 function calculate_gradient(ψ, Hψ, H, Λ, res, hg::HessianGradient)
     #TODO check the DFTK implementation
 
-    norm_res = norm(res)
+    norm_res = norm_DFTK(hg.basis, res)
 
     #this already has been done somewhere else but is not passed
     model = basis.model
@@ -79,13 +111,16 @@ mutable struct EAGradient <: AbstractGradient
     const h_solver::AbstractHSolver   #type of solver for H
     const naive_formula::Bool
     Hinv_ψ
-
-    function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
-        if isnothing(Pks)
-            Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
-        end
-        return new(basis, itmax, tol, Pks, shift, h_solver, naive_formula, nothing)
+end
+function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, horizontal = true, h_solver = GlobalOptimalHSolver(;solve_horizontal = horizontal), Pks = nothing, naive_formula = false) where {T}
+    if isnothing(Pks)
+        Pks = [DFTK.PreconditionerTPA(basis, kpt) for kpt in basis.kpoints]
     end
+    return EAGradient(basis, itmax, tol, Pks, shift, h_solver, naive_formula, nothing)
+end
+
+function EAGradient(basis::PlaneWaveBasis{T}; shift = CorrectedRelativeΛShift(μ = 0.0), itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
+    return EAGradient(basis, shift)
 end
 
 struct ConstantShift <: AbstractShiftStrategy
@@ -504,7 +539,7 @@ struct ExactHessianStep <: AbstractStepSize
     end
 end
 #DFTK.@timing
-function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ExactHessianStep)
+function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize::ExactHessianStep)
     Nk = size(ψ)[1]
 
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)]
@@ -519,7 +554,7 @@ end
 
 struct ApproxHessianStep <: AbstractStepSize end
 #DFTK.@timing
-function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ApproxHessianStep)
+function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize::ApproxHessianStep)
     Nk = size(ψ)[1]
     Ω_η = [H.blocks[ik] * ηk - ηk * Λ[ik] for (ik, ηk) in enumerate(η)]
     η_Ω_η = inner_product_DFTK(basis, η, Ω_η)
@@ -532,7 +567,7 @@ struct ConstantStep <: AbstractStepSize
     τ_const
 end
 #DFTK.@timing
-function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::ConstantStep)
+function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize::ConstantStep)
     τ = stepsize.τ_const
     return get_next(τ)
 end
@@ -545,7 +580,7 @@ mutable struct AlternatingStep <: AbstractStepSize
     end
 end
 #DFTK.@timing
-function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::AlternatingStep)
+function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize::AlternatingStep)
     τ = stepsize.τ_list[(stepsize.iter += 1) % length(stepsize.τ_list) + 1]
     return get_next(τ)
 end
@@ -563,11 +598,11 @@ mutable struct BarzilaiBorweinStep <: AbstractStepSize
     end
 end
 #DFTK.@timing
-function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize::BarzilaiBorweinStep)
+function calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize::BarzilaiBorweinStep)
     Nk = size(ψ)[1]
     if (stepsize.τ_old === nothing)
         #first step
-        next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, stepsize.τ_0)
+        next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, stepsize.τ_0)
     else
         temp = inner_product_DFTK(basis, T_η_old, res)
         if (stepsize.is_odd)
@@ -610,7 +645,7 @@ function check_rule(basis, E_current, desc_current, next, rule::NonmonotoneRule)
         #initialize c on first step
         rule.c = E_current
     end
-    E_next = next.energies_next.total
+    E_next = next.cost_next
     return E_next <= rule.c + rule.β * next.τ * desc_current
 end
 function backtrack(next, rule::NonmonotoneRule)
@@ -618,7 +653,7 @@ function backtrack(next, rule::NonmonotoneRule)
 end
 
 function update_rule!(next, rule::NonmonotoneRule)
-    E = next.energies_next.total
+    E = next.cost_next
     rule.q = rule.α * rule.q + 1.0
     return rule.c = (1 - 1 / rule.q) * rule.c + 1 / rule.q * E
 end
@@ -626,11 +661,15 @@ end
 struct ArmijoRule <: AbstractBacktrackingRule
     β::Float64
     δ::Float64
+    ϵ::Float64
+end
+function ArmijoRule(β, δ)
+    return ArmijoRule(β, δ, 1e-14)
 end
 function check_rule(basis, E_current, desc_current, next, rule::ArmijoRule)
     #small correction if change in energy is small TODO: better workaround.
-    E_next = next.energies_next.total
-    return E_next <= E_current + (rule.β * next.τ * desc_current + 32 * eps(Float64) * abs(E_current))
+    E_next = next.cost_next
+    return E_next <= E_current + (rule.β * next.τ * desc_current) + rule.ϵ * abs(E_current)
 end
 function backtrack(next, rule::ArmijoRule)
     return rule.δ * next.τ
@@ -654,7 +693,7 @@ mutable struct ModifiedSecantRule <: AbstractBacktrackingRule
 end
 function check_rule(basis, E_current, desc_current, next, rule::ModifiedSecantRule)
     #small correction if change in energy is small TODO: better workaround.
-    E_next = next.energies_next.total
+    E_next = next.cost_next
     slope_next = inner_product_DFTK(basis, next.res_next, next.Tη_next)
     slope_zero = desc_current
 
@@ -736,7 +775,7 @@ end
 abstract type IterationStrategy end
 
 #DFTK.@timing
-function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetraction, transport::AbstractTransport)
+function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetraction, transport::AbstractTransport, cost_residual::AbstractCostResidual)
     Nk = size(ψ)[1]
 
     ψ_next = calculate_retraction(ψ, η, τ, retraction)
@@ -744,14 +783,11 @@ function get_next_rcg(basis, occupation, ψ, η, τ, retraction::AbstractRetract
     ρ_next = DFTK.compute_density(basis, ψ_next, occupation)
     energies_next, H_next = DFTK.energy_hamiltonian(basis, ψ_next, occupation; ρ = ρ_next)
 
-    Hψ_next = [H_next.blocks[ik] * ψk for (ik, ψk) in enumerate(ψ_next)]
-    Λ_next = [ψ_next[ik]'Hψ_next[ik] for ik in 1:Nk]
-    Λ_next = 0.5 * [(Λ_next[ik] + Λ_next[ik]') for ik in 1:Nk]
-    res_next = [Hψ_next[ik] - ψ_next[ik] * Λ_next[ik] for ik in 1:Nk] #.* basis.kweights * size(ψ[1])[2]
+    Hψ_next, Λ_next, res_next, cost_next = calculate_cost_residual(H_next, ψ_next, energies_next.total, basis, cost_residual)
 
     Tη_next = calculate_transport(ψ_next, η, η, τ, ψ, transport, retraction; is_prev_dir = true)
 
-    return (; ψ_next, ρ_next, energies_next, H_next, Hψ_next, Λ_next, res_next, Tη_next, τ)
+    return (; ψ_next, ρ_next, energies_next, cost_next, H_next, Hψ_next, Λ_next, res_next, Tη_next, τ)
 end
 
 # standard backtracking: every step, an initial stepsize
@@ -766,12 +802,12 @@ mutable struct StandardBacktracking <: IterationStrategy
 end
 
 #DFTK.@timing
-function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::StandardBacktracking)
+function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, backtracking::StandardBacktracking)
 
-    next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.stepsize)
+    next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, backtracking.stepsize)
 
     for k in 0:backtracking.maxiter
-        if check_rule(basis, energies.total, desc, next, backtracking.rule)
+        if check_rule(basis, cost, desc, next, backtracking.rule)
             break
         end
         τ = backtrack(next, backtracking.rule)
@@ -798,10 +834,10 @@ mutable struct AdaptiveBacktracking <: IterationStrategy
     end
 end
 #DFTK.@timing
-function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::AdaptiveBacktracking)
+function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, backtracking::AdaptiveBacktracking)
 
     if isnothing(backtracking.τ_old)
-        next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.τ_0)
+        next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, backtracking.τ_0)
         τ = next.τ
     else
         τ = backtracking.τ_old
@@ -811,7 +847,7 @@ function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, 
     j = 0
     for k in 1:backtracking.maxiter
         j = k
-        if check_rule(basis, energies.total, desc, next, backtracking.rule)
+        if check_rule(basis, cost, desc, next, backtracking.rule)
             break
         end
         τ = backtrack(next, backtracking.rule)
@@ -826,6 +862,6 @@ end
 struct NoBacktracking <: IterationStrategy
     stepsize::AbstractStepSize
 end
-DFTK.@timing function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking::NoBacktracking)
-    return calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, backtracking.stepsize)
+DFTK.@timing function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, backtracking::NoBacktracking)
+    return calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, backtracking.stepsize)
 end

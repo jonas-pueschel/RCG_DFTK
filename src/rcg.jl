@@ -6,17 +6,21 @@ DFTK.@timing function riemannian_conjugate_gradient(
         tol = 1.0e-6, maxiter = 100,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
-        gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.01)),
+        gradient = EAGradient(basis, CorrectedRelativeΛShift(μ = 0.0)),
+        cost_residual = StandardCostResiudal(),
         retraction = RetractionPolar(),
         cg_param = ParamFR_PRP(),
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
-        check_convergence_early = false, #check convergence before expensive gradient calculation
+        check_convergence_early = true, #check convergence before expensive gradient calculation
         iteration_strat = AdaptiveBacktracking(
             ModifiedSecantRule(0.05, 0.1, 1.0e-12, 0.5),
             ConstantStep(1.0), 10
         ),
+        do_rayleigh_ritz = true
     ) where {T}
+    #println("Ecut: $(basis.Ecut) solve RCG")
+
     start_ns = time_ns()
     # setting parameters
     model = basis.model
@@ -53,10 +57,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
 
     # compute first residual
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+    Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_residual)
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
@@ -68,8 +69,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
     #initial callback
     info = (;
-        ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
-        energies, algorithm = "RCG",
+        ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
+        energies, cost, algorithm = "RCG",
     )
     #callback(info)
 
@@ -83,8 +84,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         n_iter += 1
 
         #perform step
-        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η)
-        next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, energies, get_next, iteration_strat)
+        get_next(τ_trial) = get_next_rcg(basis, occupation, ψ, η, τ_trial, retraction, transport_η, cost_residual)
+        next = do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, iteration_strat)
 
         #update orbitals, density, H and energies
         ψ_old = ψ
@@ -94,6 +95,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         H = next.H_next
         τ = next.τ
         energies = next.energies_next
+        cost = next.cost_next
         Hψ = next.Hψ_next
         Λ = next.Λ_next
         res = next.res_next
@@ -101,8 +103,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         # test convergence before expensive gradient caluclation, note that info contains old grad, η!
         if check_convergence_early
             info = (;
-                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, start_ns, algorithm = "RCG",
+                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
+                energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
             if is_converged(info)
@@ -134,8 +136,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         if !check_convergence_early
             # update info and callback
             info = (;
-                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, start_ns, algorithm = "RCG",
+                ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
+                energies, cost, start_ns, algorithm = "RCG",
             )
             callback(info)
             if is_converged(info)
@@ -150,13 +152,16 @@ DFTK.@timing function riemannian_conjugate_gradient(
         end
     end
 
+
     # Rayleigh-Ritz
     eigenvalues = []
     for ik in 1:Nk
         Hψk = H.blocks[ik] * ψ[ik]
         F = eigen(Hermitian(ψ[ik]'Hψk))
         push!(eigenvalues, F.values)
-        ψ[ik] .= ψ[ik] * F.vectors
+        if (do_rayleigh_ritz)
+            ψ[ik] .= ψ[ik] * F.vectors
+        end
     end
 
     εF = nothing  # does not necessarily make sense here, as the
@@ -169,7 +174,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     # println(λ_min)
 
     info = (;
-        ham = H, ψ, grad, res, η, τ, basis, energies, converged = is_converged(info), norm_res = sqrt(abs(inner_product_DFTK(basis, res, res))), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
+        ham = H, ψ, grad, res, η, τ, basis, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
         stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG",
     )
     callback(info)
@@ -182,7 +187,7 @@ function energy_adaptive_riemannian_conjugate_gradient(
         ρ = guess_density(basis),
         ψ = nothing,
         tol = 1.0e-6, maxiter = 100,
-        μ = 0.01,
+        μ = 0.0,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         shift = CorrectedRelativeΛShift(μ = μ),
@@ -211,7 +216,7 @@ function energy_adaptive_riemannian_gradient(
         ρ = guess_density(basis),
         ψ = nothing,
         tol = 1.0e-6, maxiter = 100,
-        μ = 0.01,
+        μ = 0.0,
         callback = RcgDefaultCallback(),
         is_converged = RcgConvergenceResidual(tol),
         shift = CorrectedRelativeΛShift(μ = μ),
