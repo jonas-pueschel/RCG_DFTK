@@ -859,6 +859,42 @@ function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_
     return next
 end
 
+
+# do backtracking, but re-use previous step size instead of re-calculating
+mutable struct GreedySecantStrategy <: IterationStrategy
+    const τ_0::AbstractStepSize
+    const c2::Real
+    τ_old
+    function GreedySecantStrategy(stepsize::AbstractStepSize, c2::Real)
+        return new(stepsize, c2, nothing)
+    end
+end
+#DFTK.@timing
+function do_step(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, cost, get_next, backtracking::GreedySecantStrategy)
+
+    if isnothing(backtracking.τ_old)
+        next = calculate_τ(basis, ψ, η, grad, res, T_η_old, desc, Λ, H, ρ, get_next, backtracking.τ_0)
+        τ = next.τ
+    else
+        τ = backtracking.τ_old
+        next = get_next(τ)
+    end
+
+    slope_next = inner_product_DFTK(basis, next.res_next, next.Tη_next)
+    slope_zero = desc
+
+    if abs(slope_next) <= backtracking.c2 * abs(slope_zero)
+        return next  
+    end
+
+    # secant step
+    τ_next =  (- τ * slope_zero) / (slope_next - slope_zero)
+    τ_next = τ_next < 0 ? τ : τ_next
+
+    backtracking.τ_old = τ_next
+    return get_next(τ_next)
+end
+
 struct NoBacktracking <: IterationStrategy
     stepsize::AbstractStepSize
 end

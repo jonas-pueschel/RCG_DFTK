@@ -4,8 +4,8 @@ using PseudoPotentialData
 
 
 # this script forces precompliation for all methods, ensuring comparability in runtime
-include("precompile_methods.jl");
-precompile_methods();
+# include("precompile_methods.jl");
+# precompile_methods();
 
 include("setups/silicon_setup.jl")
 # Silicon lattice constant in Bohr
@@ -33,10 +33,10 @@ println("\nEARCG-Gr")
 callback_earcg = ResidualEvalCallback(; defaultCallback, method = EvalRCG())
 DFTK.reset_timer!(DFTK.timer)
 scfres_rcg1 = energy_adaptive_riemannian_conjugate_gradient(basis; ψ = ψ1, ρ = ρ1, μ = 0, tol, 
-                                                            callback = callback_earcg);
+    callback = callback_earcg
+    );
 println("Time_tot (s): $((callback_earcg.times_tot[end])/ 1e9)")
 
-ρ1 = scfres_rcg1.ρ
 
 # H1RCG
 println("\nH1RCG")

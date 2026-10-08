@@ -13,10 +13,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
-        iteration_strat = AdaptiveBacktracking(
-            ModifiedSecantRule(0.05, 0.1, 1.0e-12, 0.5),
-            ConstantStep(1.0), 10
-        ),
+        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.1),
         do_rayleigh_ritz = true
     ) where {T}
     #println("Ecut: $(basis.Ecut) solve RCG")
@@ -199,10 +196,7 @@ function energy_adaptive_riemannian_conjugate_gradient(
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
-        iteration_strat = AdaptiveBacktracking(
-            ModifiedSecantRule(0.0, 0.1, 1.0e-12, 0.5),
-            ConstantStep(1.0), 10
-        ),
+        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.1)
     ) where {T}
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,
@@ -248,10 +242,7 @@ function h1_riemannian_conjugate_gradient(
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
-        iteration_strat = AdaptiveBacktracking(
-            ModifiedSecantRule(0.0, 0.25, 1.0e-12, 0.5),
-            ConstantStep(1.0), 10
-        ),
+        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25)
     ) where {T}
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,
@@ -276,6 +267,47 @@ function h1_riemannian_gradient(
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,
         gradient = H1Gradient(basis),
+        retraction, cg_param = ParamZero(), transport_η, transport_grad, check_convergence_early, iteration_strat
+    )
+end
+
+function l2_riemannian_conjugate_gradient(
+        basis::PlaneWaveBasis{T};
+        ρ = guess_density(basis),
+        ψ = nothing,
+        tol = 1.0e-6, maxiter = 500,
+        callback = RcgDefaultCallback(),
+        is_converged = RcgConvergenceResidual(tol),
+        retraction = RetractionPolar(),
+        cg_param = ParamFR_PRP(),
+        transport_η = DifferentiatedRetractionTransport(),
+        transport_grad = DifferentiatedRetractionTransport(),
+        check_convergence_early = true, #check convergence before expensive gradient calculation
+        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25),
+    ) where {T}
+    return riemannian_conjugate_gradient(
+        basis; ρ, ψ, tol, maxiter, callback, is_converged,
+        gradient = L2Gradient(),
+        retraction, cg_param, transport_η, transport_grad, check_convergence_early, iteration_strat
+    )
+end
+
+function l2_riemannian_gradient(
+        basis::PlaneWaveBasis{T};
+        ρ = guess_density(basis),
+        ψ = nothing,
+        tol = 1.0e-6, maxiter = 500,
+        callback = RcgDefaultCallback(),
+        is_converged = RcgConvergenceResidual(tol),
+        retraction = RetractionPolar(),
+        transport_η = DifferentiatedRetractionTransport(),
+        transport_grad = DifferentiatedRetractionTransport(),
+        check_convergence_early = true, #check convergence before expensive gradient calculation
+        iteration_strat = StandardBacktracking(NonmonotoneRule(0.95, 0.05, 0.5), BarzilaiBorweinStep(0.1, 2.5, ConstantStep(1.0)), 10)
+    ) where {T}
+    return riemannian_conjugate_gradient(
+        basis; ρ, ψ, tol, maxiter, callback, is_converged,
+        gradient = L2Gradient(),
         retraction, cg_param = ParamZero(), transport_η, transport_grad, check_convergence_early, iteration_strat
     )
 end

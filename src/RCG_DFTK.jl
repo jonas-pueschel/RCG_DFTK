@@ -44,6 +44,8 @@ export AbstractCoarseTolerance,
 
 # RCG
 export riemannian_conjugate_gradient,
+    l2_riemannian_conjugate_gradient,
+    l2_riemannian_gradient,
     h1_riemannian_conjugate_gradient,
     h1_riemannian_gradient,
     energy_adaptive_riemannian_conjugate_gradient,
@@ -90,6 +92,7 @@ export AbstractBacktrackingRule,
 export IterationStrategy,
     StandardBacktracking,
     AdaptiveBacktracking,
+    GreedySecantStrategy,
     NoBacktracking
 
 export AbstractHSolver,

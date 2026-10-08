@@ -98,6 +98,24 @@ function get_key_chain_value(timer, chain, val)
     return timer[chain[end]][val]
 end
 
+function get_ham_calls()
+    if haskey(TimerOutputs.todict(DFTK.timer)["inner_timers"], "riemannian_conjugate_gradient")
+        rcg_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["riemannian_conjugate_gradient"]["inner_timers"]
+        return  get_key_chain_value(rcg_timer, ["DftHamiltonian multiplication", "local"], "n_calls") +
+                get_key_chain_value(rcg_timer, ["do_step", "DftHamiltonian multiplication", "local"], "n_calls") +
+                get_key_chain_value(rcg_timer, ["do_step", "get_next_rcg", "DftHamiltonian multiplication", "local"], "n_calls") +
+                get_key_chain_value(rcg_timer, ["solve_H", "apply_H", "DftHamiltonian multiplication", "local"], "n_calls") +
+                get_key_chain_value(rcg_timer, ["solve_H", "DftHamiltonian multiplication", "local"], "n_calls")
+    elseif haskey(TimerOutputs.todict(DFTK.timer)["inner_timers"], "self_consistent_field")
+        scf_timer = TimerOutputs.todict(DFTK.timer)["inner_timers"]["self_consistent_field"]["inner_timers"]
+        return get_key_chain_value(scf_timer, ["LOBPCG", "DftHamiltonian multiplication", "local"], "n_calls")
+    else
+        #TODO warn?
+        return 0
+    end
+end
+
+
 abstract type AbstractEvalMethod end
 struct EvalRCG <: AbstractEvalMethod end
 function update_callback(callback::ResidualEvalCallback, ::EvalRCG)
@@ -275,15 +293,17 @@ mutable struct TrackResTimeCallback
     start_time
     err_time
     times_tot
+    hams
     Es
     norm_residuals
     function TrackResTimeCallback(default_callback, init_norm_res, init_e)
-        return new(default_callback, Int(time_ns()), 0, [0], [init_e], [init_norm_res])
+        return new(default_callback, Int(time_ns()), 0, [0], [0], [init_e], [init_norm_res])
     end
 end
 
 function (cb::TrackResTimeCallback)(info)
     if (!haskey(info, :norm_res))
+        disable_timer!(DFTK.timer)
         time_err_start = Int(time_ns())
         H = info.ham
         ψ = info.ψ
@@ -301,14 +321,19 @@ function (cb::TrackResTimeCallback)(info)
         time_err_end = Int(time_ns())
         push!(cb.norm_residuals, norm_res)
         cb.err_time += (time_err_end - time_err_start)
+        enable_timer!(DFTK.timer)
     else
+        norm_res = info.norm_res
         push!(cb.norm_residuals, info.norm_res)
     end
     push!(cb.times_tot, Int(time_ns()) - cb.start_time - cb.err_time)
+    calls_ham = get_ham_calls()
+    push!(cb.hams, calls_ham)
     push!(cb.Es, info.energies.total)
-    return cb.default_callback(info)
+    info_temp = (; info..., norm_res, calls_ham)
+    return cb.default_callback(info_temp)
 end
 
 function to_named_tuple(cb::TrackResTimeCallback)
-    return (;Es = cb.Es, norm_residuals = cb.norm_residuals, times_tot = cb.times_tot)
+    return (;Es = cb.Es, norm_residuals = cb.norm_residuals, hams = cb.hams, times_tot = cb.times_tot)
 end
