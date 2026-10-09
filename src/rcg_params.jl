@@ -198,9 +198,9 @@ function calculate_gradient(ψ, Hψ, H, Λ, res, ea_grad::EAGradient)
     else
         # Approximate but numerically stable formula
         X = solve_H(H, res, Σ, ψ, Hψ, ea_grad.itmax, ea_grad.tol, ea_grad.Pks, ea_grad.h_solver)
-
-        Mtx = [ψ[ik]'X[ik] for ik in 1:Nk]
-        return [X[ik] / (I - Mtx[ik]) - ψ[ik] * Mtx[ik] for ik in 1:Nk]
+        return X
+        #Mtx = [ψ[ik]'X[ik] for ik in 1:Nk]
+        #return [X[ik] / (I - Mtx[ik]) - ψ[ik] * Mtx[ik] for ik in 1:Nk]
     end
 end
 
