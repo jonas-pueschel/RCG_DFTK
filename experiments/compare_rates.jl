@@ -65,22 +65,20 @@ occupation = reference.occupation
 
 
 
-function expected_steps_cg(κ::Real; r0=1e-1, rtol=1e-8, norm::Symbol=:residual)
+function expected_steps_cg(κ::Real; κ_l2::Real = κ, r0=1e-1, rtol=1e-8)
     κ >= 1 || throw(ArgumentError("κ must be ≥ 1"))
     κ == 1 && return 1                      # converges in one step
     ε = rtol / r0
-    s = sqrt(κ)
-    C = norm === :residual ? 2s : 2.0
+    C = 2 * sqrt(κ_l2)
     k = log(C / ε) / log((s + 1) / (s - 1))
     return max(ceil(Int, k), 0)
 end
 
-function expected_steps_gd(κ::Real; r0=1e-1, rtol=1e-8,
-                           step::Symbol=:exact, norm::Symbol=:residual)
+function expected_steps_gd(κ::Real; r0=1e-1, rtol=1e-8)
     κ >= 1 || throw(ArgumentError("κ must be ≥ 1"))
     κ == 1 && return 1
     ε = rtol / r0
-    C = (step === :exact && norm === :residual) ? sqrt(κ) : 1.0
+    C = sqrt(κ) #TODO, this can be made smaller if all other kappas are known
     k = log(C / ε) / log((κ + 1) / (κ - 1))
     return max(ceil(Int, k), 0)
 end
