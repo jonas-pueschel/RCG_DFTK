@@ -29,7 +29,7 @@ p = model.n_electrons/2
 tol = 1.0e-8;
 
 # number of runs per method, times_tot is averaged over these
-n_runs = 10;
+n_runs = 1;
 # seed for the RNG, reset before every run (DFTK fills missing initial bands with random vectors)
 rng_seed = 1234;
 
@@ -84,13 +84,13 @@ callback_earcg2 = run_averaged("EARCG-Gr", cb -> energy_adaptive_riemannian_conj
 callback_h1rcg = run_averaged("H1RCG", cb -> h1_riemannian_conjugate_gradient(basis;
             ψ = ψ1, ρ = ρ1,
             tol, callback = cb,
-            iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25)));
+            iteration_strat = GreedySecantStrategy(ApproxHessianStep(), 0.25)));
 
 callback_l2rcg = run_averaged("L2RCG", cb -> l2_riemannian_conjugate_gradient(basis;
             ψ = ψ1, ρ = ρ1,
             tol, callback = cb,
-            maxiter = 100,
-            iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25)));
+            maxiter = 200,
+            iteration_strat = GreedySecantStrategy(ApproxHessianStep(), 0.25)));
 
 callback_scf = run_averaged("SCF", cb -> self_consistent_field(basis; ψ = ψ1, ρ = ρ1, tol,
             callback = cb));

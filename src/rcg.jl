@@ -242,7 +242,7 @@ function h1_riemannian_conjugate_gradient(
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
-        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25)
+        iteration_strat = GreedySecantStrategy(ApproxHessianStep(), 0.25)
     ) where {T}
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,
@@ -283,7 +283,7 @@ function l2_riemannian_conjugate_gradient(
         transport_η = DifferentiatedRetractionTransport(),
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
-        iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.25),
+        iteration_strat = GreedySecantStrategy(ApproxHessianStep(), 0.25),
     ) where {T}
     return riemannian_conjugate_gradient(
         basis; ρ, ψ, tol, maxiter, callback, is_converged,

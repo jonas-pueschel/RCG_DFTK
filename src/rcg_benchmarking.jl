@@ -296,8 +296,11 @@ mutable struct TrackResTimeCallback
     hams
     Es
     norm_residuals
-    function TrackResTimeCallback(default_callback, init_norm_res, init_e)
-        return new(default_callback, Int(time_ns()), 0, [0], [0], [init_e], [init_norm_res])
+    norm_gradients
+    iterates
+    function TrackResTimeCallback(default_callback, init_norm_res, init_e; ψ0 = nothing)
+        it = isnothing(ψ0) ? nothing : Any[ψ0]
+        return new(default_callback, Int(time_ns()), 0, [0], [0], [init_e], [init_norm_res], [init_norm_res], it)
     end
 end
 
@@ -329,7 +332,13 @@ function (cb::TrackResTimeCallback)(info)
     push!(cb.times_tot, Int(time_ns()) - cb.start_time - cb.err_time)
     calls_ham = get_ham_calls()
     push!(cb.hams, calls_ham)
+    if hasfield(info, norm_grad) && !isnothing(info.norm_grad)
+        push!(cb.norm_gradients, info.norm_grad)
+    end
     push!(cb.Es, info.energies.total)
+    if !isnothing(cb.iterates)
+        push!(cb.iterates, info.ψ)
+    end
     info_temp = (; info..., norm_res, calls_ham)
     return cb.default_callback(info_temp)
 end

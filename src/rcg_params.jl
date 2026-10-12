@@ -14,6 +14,18 @@ function norm_DFTK(basis, ξ)
     return sqrt(real(sum(ξ2)))
 end
 
+function grassmann_dist_DFTK(basis, ψ, φ)
+    length(ψ) == length(φ) || throw(DimensionMismatch("X and Y must have equal length"))
+    d2 = zero(real(float(eltype(first(ψ)))))
+    n_cols = size(ψ[1])[2]
+    for (ψk, φk, weight) in zip(ψ, φ, basis.kweights)
+        size(ψk) == size(φk) || throw(DimensionMismatch("size mismatch"))
+        p = size(ψk, 2)
+        d2 += max(2p - 2 * sum(svdvals(ψk' * φk)), 0) * weight   # clamp tiny negative round-off
+    end
+    return sqrt(d2 * n_cols)
+end
+
 abstract type AbstractCostResidual end
 
 struct StandardCostResiudal <: AbstractCostResidual end
