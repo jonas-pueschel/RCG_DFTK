@@ -16,8 +16,8 @@ include("inner_solvers.jl")
 include("rcg_params.jl")
 include("rcg_callbacks.jl")
 include("rcg_benchmarking.jl")
-include("rcg_multilevel.jl")
-include("rcg_multilevel_params.jl")
+include("rml.jl")
+include("rml_params.jl")
 
 # Multilevel
 export two_level_riemannian_optimization,

@@ -82,3 +82,11 @@ end
 function RcgConvergenceGradient(tolerance)
     return info -> (info.norm_grad < tolerance)
 end
+
+mutable struct RcgConvergenceErrEstimate
+    tolerance
+end
+function (conv::RcgConvergenceErrEstimate)(info)
+    err_est = DFTK.invert_refinement_metric(info.basis, info.ψ, info.res)
+    return norm_DFTK(info.basis, err_est) < conv.tolerance
+end
