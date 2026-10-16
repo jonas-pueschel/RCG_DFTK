@@ -18,11 +18,20 @@ include("rcg_callbacks.jl")
 include("rcg_benchmarking.jl")
 include("rml.jl")
 include("rml_params.jl")
+include("rfmg.jl")
+include("rfmg_params.jl")
+include("refinement_metric.jl")
+include("nested_iteration.jl")
 
 # Multilevel
 export two_level_riemannian_optimization,
     multilevel_riemannian_optimization,
-    rcg_coarse_solver
+    rcg_coarse_solver,
+    riemannian_full_multigrid,
+    nested_iteration,
+    nested_earcg,
+    nested_h1rcg,
+    nested_scf
 export AbstractVectorMultilevelMap,
     ProjectionMap,
     PseudoInverse_1_2_Map,
@@ -93,6 +102,7 @@ export IterationStrategy,
     StandardBacktracking,
     AdaptiveBacktracking,
     GreedySecantStrategy,
+    RestartedGreedySecantStrategy,
     NoBacktracking
 
 export AbstractHSolver,
@@ -111,7 +121,8 @@ export AbstractEvalMethod,
 
 export RcgDefaultCallback,
     RcgConvergenceGradient,
-    RcgConvergenceResidual
+    RcgConvergenceResidual,
+    RfmgDefaultCallback
 
 
 end # module RCG_DFTK

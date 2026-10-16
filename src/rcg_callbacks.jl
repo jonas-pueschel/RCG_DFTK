@@ -85,8 +85,22 @@ end
 
 mutable struct RcgConvergenceErrEstimate
     tolerance
+    # cache of the last estimate, keyed by the identity of info.ψ, such that
+    # a callback and the convergence check do not both invert the metric
+    ψ_last
+    err_last
 end
+RcgConvergenceErrEstimate(tolerance) = RcgConvergenceErrEstimate(tolerance, nothing, nothing)
+
+function estimate_error!(conv::RcgConvergenceErrEstimate, info)
+    if isnothing(conv.ψ_last) || !(conv.ψ_last === info.ψ)
+        conv.err_last = invert_refinement_metric_improved(info.basis, info.ψ, info.res)
+        conv.ψ_last = info.ψ
+    end
+    return conv.err_last
+end
+
 function (conv::RcgConvergenceErrEstimate)(info)
-    err_est = DFTK.invert_refinement_metric(info.basis, info.ψ, info.res)
+    err_est = estimate_error!(conv, info)
     return norm_DFTK(info.basis, err_est) < conv.tolerance
 end

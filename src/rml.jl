@@ -16,7 +16,7 @@ rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, coarse
         ),
         do_rayleigh_ritz = false,
     )
-    return result.ψ
+    return result.ψ, result.ρ
 end
 
 # 2 level riemannian optimization algorithm
@@ -53,6 +53,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         ConstantStep(1.0), 10
     ),
     do_rayleigh_ritz = true,
+    n_iter = 0,
 ) where {T}
     start_ns = time_ns()
     # setting parameters
@@ -89,7 +90,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     occupation = [filled_occ * ones(T, n_bands) for ik in 1:Nk]
 
     # iterators
-    n_iter = 0
+    # n_iter = 0 #moved to fct head 
     coarse_corrections = []
 
     # orbitals, densities and energies to be updated along the iterations
@@ -110,7 +111,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
         ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
         tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
-        ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+        ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
         η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
         cc = true
     else 
@@ -183,7 +184,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
             ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
             tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
-            ϕ_c = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+            ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
             η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
             cc = true
         end
@@ -216,11 +217,11 @@ DFTK.@timing function two_level_riemannian_optimization(
     # Rayleigh-Ritz
     eigenvalues = []
     for ik in 1:Nk
-        Hψk = H.blocks[ik] * ψ[ik]
-        F = eigen(Hermitian(ψ[ik]'Hψk))
+        Hψk = H.blocks[ik] * ψ_f[ik]
+        F = eigen(Hermitian(ψ_f[ik]'Hψk))
         push!(eigenvalues, F.values)
         if (do_rayleigh_ritz)
-            ψ[ik] .= ψ[ik] * F.vectors
+            ψ_f[ik] .= ψ_f[ik] * F.vectors
         end
     end
 
@@ -234,7 +235,8 @@ DFTK.@timing function two_level_riemannian_optimization(
     # println(λ_min)
 
     info = (;
-        ham = H, ψ = ψ_f, res, Rres, η, τ, basis = basis_f, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis_f, res), ρ, eigenvalues, occupation, εF, coarse_corrections, n_iter,
+        ham = H, ψ = ψ_f, res, Rres, η, τ, basis = basis_f, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis_f, res), 
+        ρ = ρ_f, eigenvalues, occupation, εF, coarse_corrections, n_iter,
         stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "2gRG",
     )
     callback(info)
@@ -279,6 +281,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
         ConstantStep(1.0), 10
     ) for basis =  basis_arr[2:end]],
     do_rayleigh_ritz = true,
+    n_iter = 0
 )
     for k = 1:(length(basis_arr) - 1)
         @assert basis_arr[k].Ecut < basis_arr[k + 1].Ecut
@@ -310,7 +313,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
                 iteration_strats_coarse = iteration_strats_coarse[1:end-1],
                 do_rayleigh_ritz = false
             )
-            return result.ψ
+            return result.ψ, result.ρ
         end
     end
     retraction = retraction_functor()
@@ -327,5 +330,6 @@ DFTK.@timing function multilevel_riemannian_optimization(
         point_restriction, multilevel_map, gradient,retraction, check_convergence_early, 
         iteration_strat_fine = iteration_strats_fine[end], 
         iteration_strat_coarse = iteration_strats_coarse[end], 
-        do_rayleigh_ritz)
+        do_rayleigh_ritz,
+        n_iter)
 end

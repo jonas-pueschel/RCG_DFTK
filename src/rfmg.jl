@@ -1,34 +1,35 @@
-function coarsest_solve(basis, gradient, ψ_c, ρ_c; maxiter = 100, tol = 1e-2, callback = (info) -> nothing)
+function coarsest_solve(basis, ψ_c, ρ_c; maxiter = 100, tol = 1e-2, callback = (info) -> nothing)
     is_converged = RcgConvergenceErrEstimate(tol)
     result = riemannian_conjugate_gradient(basis; ρ = ρ_c, ψ = ψ_c, 
         is_converged,
         maxiter,
         callback,
-        gradient,
+        gradient = H1Gradient(basis),
         do_rayleigh_ritz = false
     )
-    return result.ψ
+    return result.ψ, result.ρ
 end
 
-
-DFTK.@timing function prolongation_based_two_level()
-
-end
 
 DFTK.@timing function riemannian_full_multigrid(
-    basis_arr::Vector;
+    basis_arr::Vector; ψ = nothing, ρ = nothing,
     tol = 1.0e-6, maxiter = 100, maxiter_inner = 100,
-    callback = RcgDefaultCallback(),
-    is_converged = RcgConvergenceResidual(tol),
+    callback = RfmgDefaultCallback(),
+    callback_mid = (info) -> nothing,
+    callback_coarse = (info) -> nothing,
+    #TODO: Error estimator
+    refinement_tol = 0.45,
     coarse_cond_tol = 0.45,
     coarse_steps_dist = 1,
     force_post_smoothing = false,
     coarse_cond_functor = (tol) -> ToleranceMinStepCoarseCondition(coarse_cond_tol, tol; dist = coarse_steps_dist),
     coarse_density = RecalculateDensity(),
-    coarse_cost_residual = CoarseGridCostResidual,
-    coarse_model_tol = 1e-2,
+    coarse_model_tol = 1e-2, 
+    #TODO this does not have to be a functor, does it?
     coarse_tol_functor = (tol) -> RelativeResTolerance(coarse_model_tol, tol),
-    cost_residual = StandardCostResiudal(),
+    coarse_model_tol_outer = 1e-2, 
+    coarse_tol_functor_outer = (tol) -> RelativeResTolerance(coarse_model_tol_outer, tol),
+    #cost_residual = StandardCostResiudal(), #TODO what happens with this?
     gradients = [EAGradient(basis) for basis = basis_arr],
     point_restriction_functor = () -> ProjectiveRestriction(),
     multilevel_map_functor = (point_restriction) -> AlgebraicMap(point_restriction),
@@ -43,7 +44,10 @@ DFTK.@timing function riemannian_full_multigrid(
         ConstantStep(1.0), 10
     ) for basis =  basis_arr[2:end]],
     do_rayleigh_ritz = true,
+    # line search for the fine energy along the prolongated coarse correction
+    iteration_strat_outer = RestartedGreedySecantStrategy(ConstantStep(1.0), 0.1),
 )
+    start_ns = time_ns()
     for k = 1:(length(basis_arr) - 1)
         @assert basis_arr[k].Ecut < basis_arr[k + 1].Ecut
     end
@@ -52,38 +56,133 @@ DFTK.@timing function riemannian_full_multigrid(
     end
 
     basis_arr_curr = [basis_arr[1]]
-    basis_next = basis_arr[2]
+    basis_f = basis_arr[2]
+    model_f = basis_f.model
+    basis_c = basis_arr[1]
+
+    # check that there are no virtual orbitals
+    filled_occ = DFTK.filled_occupation(model_f)
+    n_spin = model_f.n_spin_components
+    n_bands = div(model_f.n_electrons, n_spin * filled_occ, RoundUp)
+    # number of kpoints and occupation
+    Nk = length(basis_f.kpoints)
+    occupation = [filled_occ * ones(eltype(basis_f), n_bands) for ik in 1:Nk]
+
+    if (isnothing(ψ) || isnothing(ρ))
+        ψ_c, ρ_c = coarsest_solve(basis_arr[1], ψ, ρ; tol = coarse_model_tol)
+    else
+        ψ_c, ρ_c = ψ, ρ
+    end
+    retraction = retraction_functor()
+    transport = DifferentiatedRetractionTransport()
+
+    # fine grid quantities at the prolongated current point
+    fine = evaluate_prolongated(basis_c, basis_f, occupation, ψ_c)
+    ρ_prev = nothing
+    local Rres, est_err, est_err_perc
+    converged = false
+    τ = nothing  # step size of the line search leading to the current iterate
+
+    depth = 1
     n_iter = 0
-
-    ψ_c = coarsest_solve(basis_arr[1], gradients[1], ψ, ρ; tol = coarse_model_tol)
-
-
-
     while n_iter < maxiter  
         n_iter += 1
+        (; ψ_f, ρ_f, energies, H, res) = fine
 
-        # solve 2-level
-
-        # get residual from basis_next
+        # all three vector maps are identcal here!
+        Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, ProjectionMap())
 
         # error estimation; if possible break, if necessary refine
+        # TODO different error estimators
+
+        est_err = invert_refinement_metric_improved(basis_f, ψ_f, res)
+        est_err_coarse = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, est_err, ProjectionMap())
+
+        #TODO this is different than inverting the metric on Rres! not clear what is the best choice!
+        est_err_perc = norm_DFTK(basis_c, est_err_coarse)/ norm_DFTK(basis_f, est_err) 
+        converged = norm_DFTK(basis_f, est_err) < tol
+        info = (;
+            ham = H, ψ = ψ_f, res, Rres, basis = basis_f, converged, stage = :iterate, norm_res = norm_DFTK(basis_f, res), norm_Rres = norm_DFTK(basis_c, Rres), ρin = ρ_prev, ρout = ρ_f, n_iter,
+            energies, cost = energies.total, est_err, est_err_perc, τ, start_ns, algorithm = "RFMG",
+        )
+        callback(info)
+        if converged
+            break;
+        end
 
 
+        if est_err_perc < refinement_tol 
+            if depth == length(basis_arr) -1
+                @warn "cannot refine anymore - switching to RML"
+                # the error estimate of the finest level is computed once per iterate
+                # and shared between the convergence check and the callback
+                is_converged = RcgConvergenceErrEstimate(tol)
+                cb_ml = function (info)
+                    if info.stage == :iterate && !haskey(info, :est_err)
+                        info = merge(info, (; est_err = estimate_error!(is_converged, info)))
+                    end
+                    callback(info)
+                end
+                info = multilevel_riemannian_optimization(
+                    basis_arr;
+                    ψ = ψ_f,
+                    ρ = ρ_f,
+                    tol,
+                    is_converged,
+                    maxiter, maxiter_inner,
+                    callback = cb_ml,
+                    callback_mid,
+                    callback_coarse,
+                    coarse_cond_tol,
+                    coarse_steps_dist,
+                    force_post_smoothing,
+                    coarse_cond_functor,
+                    coarse_density,
+                    coarse_model_tol,
+                    coarse_tol_functor,
+                    gradients,
+                    point_restriction_functor,
+                    multilevel_map_functor,
+                    retraction_functor,
+                    check_convergence_early,
+                    iteration_strats_fine,
+                    iteration_strats_coarse,
+                    do_rayleigh_ritz,
+                    n_iter,
+                )
+                # the runtime of the multilevel method does not include the RFMG iterations
+                return merge(info, (; runtime_ns = time_ns() - start_ns, start_ns))
+            else
+                #need of refinement
+                ψ_c = ψ_f
+                ρ_c = ρ_f
+                #TODO extrapolate prev density?
+                depth += 1
+                basis_arr_curr = basis_arr[1:depth]
+                basis_f = basis_arr[depth + 1]
+                basis_c = basis_arr[depth]
+                # fine grid quantities on the new fine grid (also needed for the line search)
+                fine = evaluate_prolongated(basis_c, basis_f, occupation, ψ_c)
+                (; ψ_f, ρ_f, energies, H, res) = fine
+                Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, ProjectionMap())
+            end
+        end
 
+        # solve 2-level
         if length(basis_arr_curr) == 1
-            ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual)
+            ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[1], gradients[1], maxiter_inner; 
+                callback = callback_coarse)
         else
             ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
-                cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
+                cost_residual_inner = CoarseGridCostResidual(ψ_c, Rres)
                 result = multilevel_riemannian_optimization(basis_arr_curr; ρ = ρ_c, ψ = ψ_c, 
                     tol,
                     maxiter = maxiter_inner,
                     callback = callback_mid,
-                    is_converged = RcgConvergenceResidual(tol), #TODO what to use here?
+                    is_converged = RcgConvergenceResidual(tol), # TODO what to use here?
                     coarse_cond_functor,
                     force_post_smoothing,
                     coarse_density,
-                    coarse_cost_residual,
                     coarse_tol_functor,
                     gradients = gradients[1:length(basis_arr_curr)],
                     cost_residual = cost_residual_inner,
@@ -94,17 +193,189 @@ DFTK.@timing function riemannian_full_multigrid(
                     iteration_strats_coarse = iteration_strats_coarse[1:length(basis_arr_curr)],
                     do_rayleigh_ritz = false
                 )
-                return result.ψ
+                return result.ψ, result.ρ
             end
         end
+        coarse_tol = coarse_tol_functor_outer(tol)
+        tol_c = get_coarse_tol(basis_c, basis_f, Rres, res, coarse_tol)
+        ψ_c_sol, ρ_c_sol = ml_coarse_solver(ψ_c, ρ_c, Rres, tol_c)
 
-        retraction = retraction_functor()
-        point_restriction = point_restriction_functor()
-        multilevel_map = multilevel_map_functor(point_restriction)
-        gradient = gradients[end]
-        coarse_cond = coarse_cond_functor(tol)
-        coarse_tol = coarse_tol_functor(tol)
+        # line search for the fine energy along the prolongated coarse correction
+        η_c = invRet(ψ_c, ψ_c_sol)
+        η_f = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, η_c, ProjectionMap())
+        # should be the same as fine desc
+        desc = inner_product_DFTK(basis_f, η_c, Rres)
+        get_next = τ -> get_next_prolongated(basis_c, basis_f, occupation, ψ_c, η_c, τ, retraction, transport)
+        if desc < 0
+            next = do_step(basis_f, ψ_f, η_f, nothing, res, nothing, desc, fine.Λ, H, ρ_f, energies.total,
+                           get_next, iteration_strat_outer)
+        else
+            @warn "the coarse correction is not a descent direction on the fine grid, taking the full step"
+            next = get_next(1.0)
+        end
+
+        # the coarse density is only used as initial guess of the coarse solver
+        ψ_c = next.ψ_c_next
+        τ = next.τ
+        ρ_c = next.τ == 1 ? ρ_c_sol : DFTK.compute_density(basis_c, ψ_c, occupation)
+        ρ_prev = ρ_f
+        # the fine residual at the next point is already known from the line search
+        fine = (; ψ_f = next.ψ_next, ρ_f = next.ρ_next, energies = next.energies_next, cost = next.cost_next,
+                  H = next.H_next, Hψ = next.Hψ_next, Λ = next.Λ_next, res = next.res_next)
     end
 
-    return 
+    (; ψ_f, ρ_f, energies, H, res) = fine
+
+    # Rayleigh-Ritz
+    eigenvalues = []
+    for ik in 1:Nk
+        Hψk = H.blocks[ik] * ψ_f[ik]
+        F = eigen(Hermitian(ψ_f[ik]'Hψk))
+        push!(eigenvalues, F.values)
+        if (do_rayleigh_ritz)
+            ψ_f[ik] .= ψ_f[ik] * F.vectors
+        end
+    end
+
+    εF = nothing  # does not necessarily make sense here, as the
+    # Aufbau property might not even be true
+
+    # return results and call callback one last time with final state for clean
+    # up
+
+    # λ_min = [eigmin(real(Λ[ik])) for ik = 1:Nk]
+    # println(λ_min)
+
+    info = (;
+        ham = H, ψ = ψ_f, res, Rres, basis = basis_f, energies, cost= energies.total, converged, norm_res = norm_DFTK(basis_f, res), norm_Rres = norm_DFTK(basis_c, Rres), 
+        ρ = ρ_f, eigenvalues, occupation, εF, n_iter,
+        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, est_err, est_err_perc, algorithm = "RFMG",
+    )
+
+
+    callback(info)
+    info
+end
+
+
+"""
+    RfmgDefaultCallback(; show_time = true, lpadding = "", basis_arr = nothing, ψ_ref = nothing)
+
+Prints one line per iteration and records the history of the current run in `times`
+(runtime in seconds since the start of the method, without the time spent in this
+callback), `dists` (Grassmann distance to `ψ_ref`, `NaN` if not available), `n_iters` and
+`Ecuts`. The history is reset whenever a new run starts (`n_iter == 1`).
+`ψ_ref` is an optional reference solution on the finest grid `basis_arr[end]`; it can also
+be set afterwards via `callback.ψ_ref = ...`.
+"""
+mutable struct RfmgDefaultCallback
+    show_time
+    lpadding
+    basis_arr
+    ψ_ref
+    prev_time
+    prev_cost
+    start_ns
+    overhead_ns
+    times
+    dists
+    n_iters
+    Ecuts
+end
+function RfmgDefaultCallback(; show_time = true, lpadding = "", basis_arr = nothing, ψ_ref = nothing)
+    RfmgDefaultCallback(show_time, lpadding, basis_arr, ψ_ref, nothing, NaN, nothing, 0,
+                        Float64[], Float64[], Int[], Float64[])
+end
+
+function (cb::RfmgDefaultCallback)(info)
+    entry_ns = time_ns()
+    (; show_time, lpadding, basis_arr, ψ_ref) = cb
+    show_dist = !isnothing(basis_arr) && !isnothing(ψ_ref)
+    #!mpi_master() && return info  # Rest is printing => only do on master
+    if info.stage == :finalize
+        if (haskey(info, :converged))
+            info.converged || @warn "$(info.algorithm) not converged."
+        end
+        return info
+    end
+    if info.n_iter == 1
+        cb.prev_time = nothing
+        cb.prev_cost = NaN
+        # start of the method: take it from the info if possible
+        cb.start_ns = haskey(info, :start_ns) ? info.start_ns :
+                      haskey(info, :runtime_ns) ? entry_ns - info.runtime_ns : entry_ns
+        cb.overhead_ns = 0
+        empty!(cb.times); empty!(cb.dists); empty!(cb.n_iters); empty!(cb.Ecuts)
+        println("$(lpadding)n     Cost              log10|R|   log10|RR|   log10(ΔC)    log10(Δρ)   log10(err)$(show_dist ? "   log10(dist)" : "")   err_c %   τ         Ecut     Δtime  ")
+        println("$(lpadding)---   ---------------   ---------   ---------  ----------   ---------   ----------$(show_dist ? "   -----------" : "")   -------   -------   ------   -------")
+    end
+    cost = haskey(info, :cost) ? info.cost : info.energies.total
+    cost = isnothing(cost) ? Inf : cost
+    Δρ = !haskey(info, :ρin) || !haskey(info, :ρout) || isnothing(info.ρin) || (size(info.ρout) != size(info.ρin)) ?
+        nothing : norm(info.ρout - info.ρin) * sqrt(abs(info.basis.dvol))
+
+    tstr = " "^7
+    if show_time && !isnothing(cb.prev_time)
+        tstr = @sprintf " %6s" TimerOutputs.prettytime(entry_ns - cb.prev_time)
+    end
+
+    format_log8(e) = @sprintf "%8.2f" log10(abs(e))
+
+    Estr = (@sprintf "%+15.12f" round(cost, sigdigits = 13))[1:15]
+    if isnan(cb.prev_cost)
+        ΔC = " "^10
+    else
+        sign = cost < cb.prev_cost ? "  " : "+ "
+        ΔC = sign * format_log8(cost - cb.prev_cost)
+    end
+
+    Δρstr = isnothing(Δρ) ? " "^9 : " " * format_log8(Δρ)
+
+    # methods without a residual (e.g. SCF) leave all residual related fields empty
+    resstr = haskey(info, :norm_res) && !isnothing(info.norm_res) ?
+        " " * format_log8(info.norm_res) : " "^9
+    # the restricted residual and the coarse error percentage only exist in RFMG itself;
+    # other methods (2gRG called by RFMG on the finest level, single-grid methods
+    # in a nested iteration) have no coarser grid to compare to
+    is_rfmg = info.algorithm == "RFMG"
+    Rresstr = is_rfmg && haskey(info, :norm_Rres) && !isnothing(info.norm_Rres) ?
+        " " * format_log8(info.norm_Rres) : " "^9
+
+    est_err = haskey(info, :est_err) ? info.est_err : nothing
+    if isnothing(est_err) && !is_rfmg && haskey(info, :res) && !isnothing(info.res)
+        est_err = invert_refinement_metric_improved(info.basis, info.ψ, info.res)
+    end
+    errstr = !isnothing(est_err) ?
+        "  " * format_log8(norm_DFTK(info.basis, est_err)) : " "^10
+    diststr = ""
+    dist = NaN
+    if show_dist
+        basis_ref = basis_arr[end]
+        # methods like SCF also carry virtual orbitals: only compare the first p bands,
+        # p being the number of bands of ψ_ref
+        ψ = [ψk[:, 1:size(ψ_ref[ik], 2)] for (ik, ψk) in enumerate(info.ψ)]
+        ψ_fine = info.basis === basis_ref ? ψ : prolongate_point(info.basis, basis_ref, ψ)
+        dist = grassmann_dist_DFTK(basis_ref, ψ_fine, ψ_ref)
+        diststr = "   " * (@sprintf "%11.2f" log10(dist))
+    end
+    percstr = is_rfmg && haskey(info, :est_err_perc) && !isnothing(info.est_err_perc) ?
+        (@sprintf "%7.2f" 100 * info.est_err_perc) : " "^7
+    # the τ of SCF is the kinetic energy density, not a step size
+    τstr = info.algorithm != "SCF" && haskey(info, :τ) && info.τ isa Real ?
+        (@sprintf "%7.3f" info.τ) : " "^7
+    Ecutstr = @sprintf "%6.1f" info.basis.Ecut
+
+    print(lpadding)
+    @printf "% 3d   %s   %s   %s   %s   %s   %s%s   %s   %s   %s   %s" info.n_iter Estr resstr Rresstr ΔC Δρstr errstr diststr percstr τstr Ecutstr tstr
+    println()
+    push!(cb.times, (entry_ns - cb.start_ns - cb.overhead_ns) / 1e9)
+    push!(cb.dists, dist)
+    push!(cb.n_iters, info.n_iter)
+    push!(cb.Ecuts, info.basis.Ecut)
+
+    cb.prev_cost = cost
+    flush(stdout)
+    cb.prev_time = time_ns()
+    cb.overhead_ns += cb.prev_time - entry_ns
+    return info
 end
