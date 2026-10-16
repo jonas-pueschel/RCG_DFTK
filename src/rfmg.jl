@@ -46,6 +46,13 @@ DFTK.@timing function riemannian_full_multigrid(
     do_rayleigh_ritz = true,
     # line search for the fine energy along the prolongated coarse correction
     iteration_strat_outer = RestartedGreedySecantStrategy(ConstantStep(1.0), 0.1),
+    # if true, the coarse problems of the outer iteration are solved without the coarse grid
+    # correction from the fine residual, i.e. with StandardCostResiudal() instead of
+    # CoarseGridCostResidual(ψ_c, Rres)
+    # TODO: Ecut growth and Ecut dist? i.e. dynamically generate basis?
+    basis_distance = 3,
+    greedy_cost_residual = false,
+    only_rcg = false,
 )
     start_ns = time_ns()
     for k = 1:(length(basis_arr) - 1)
@@ -91,6 +98,13 @@ DFTK.@timing function riemannian_full_multigrid(
 
         # all three vector maps are identcal here!
         Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, ProjectionMap())
+
+        #TODO debug: relative size of the fine grid correction ‖Rres − res_c(ψ_c)‖ / ‖Rres‖
+        # ρ_c_dbg = DFTK.compute_density(basis_c, ψ_c, occupation)
+        # energies_c_dbg, H_c_dbg = energy_hamiltonian(basis_c, ψ_c, occupation; ρ = ρ_c_dbg)
+        # _, _, res_c_dbg, _ = calculate_cost_residual(H_c_dbg, ψ_c, energies_c_dbg.total, basis_c, StandardCostResiudal())
+        # quot = norm_DFTK(basis_c, Rres - res_c_dbg) / norm_DFTK(basis_c, Rres)
+        # println(quot)
 
         # error estimation; if possible break, if necessary refine
         # TODO different error estimators
@@ -169,13 +183,17 @@ DFTK.@timing function riemannian_full_multigrid(
         end
 
         # solve 2-level
-        if length(basis_arr_curr) == 1
-            ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[1], gradients[1], maxiter_inner; 
-                callback = callback_coarse)
+        basis_idx = [depth - basis_distance*i for i = Int(floor((depth - 1)/basis_distance)):-1:0]
+        if length(basis_idx) == 1 || only_rcg
+            coarse_cost_residual = greedy_cost_residual ? ((ψ_c, Rres) -> StandardCostResiudal()) :
+                                                          CoarseGridCostResidual
+            ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[depth], gradients[depth], maxiter_inner; 
+                callback = callback_coarse, coarse_cost_residual)
         else
             ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
-                cost_residual_inner = CoarseGridCostResidual(ψ_c, Rres)
-                result = multilevel_riemannian_optimization(basis_arr_curr; ρ = ρ_c, ψ = ψ_c, 
+                cost_residual_inner = greedy_cost_residual ? StandardCostResiudal() :
+                                                             CoarseGridCostResidual(ψ_c, Rres)
+                result = multilevel_riemannian_optimization(basis_arr_curr[basis_idx]; ρ = ρ_c, ψ = ψ_c, 
                     tol,
                     maxiter = maxiter_inner,
                     callback = callback_mid,
@@ -184,7 +202,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     force_post_smoothing,
                     coarse_density,
                     coarse_tol_functor,
-                    gradients = gradients[1:length(basis_arr_curr)],
+                    gradients = gradients[basis_idx],
                     cost_residual = cost_residual_inner,
                     point_restriction_functor,
                     multilevel_map_functor,
