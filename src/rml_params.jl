@@ -303,6 +303,23 @@ function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBa
     return c1 && c2
 end
 
+# classical (non-adaptive) cycles: every cycle consists of ν_pre smoothing (gradient) steps,
+# one coarse correction and ν_post smoothing steps. Used as coarse condition on every level;
+# the inner levels perform exactly one cycle, see multilevel_riemannian_optimization.
+struct CycleCoarseCondition <: AbstractCoarseCondition
+    ν_pre::Int
+    ν_post::Int
+end
+VCycle(ν_pre, ν_post = ν_pre) = CycleCoarseCondition(ν_pre, ν_post)
+SawtoothCycle(ν_post) = CycleCoarseCondition(0, ν_post)
+
+cycle_length(cc::CycleCoarseCondition) = cc.ν_pre + 1 + cc.ν_post
+
+# n_iter is the number of steps already performed, i.e. the direction for step n_iter + 1 is chosen
+function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::CycleCoarseCondition) where {T}
+    return mod(n_iter, cycle_length(cc)) == cc.ν_pre
+end
+
 abstract type AbstractCoarseDensity end
 
 struct RecalculateDensity <: AbstractCoarseDensity end

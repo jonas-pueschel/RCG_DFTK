@@ -1,6 +1,13 @@
-function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1])
-    Ti = ElementPsp(:Ti, psp = load_psp("hgh/lda/ti-q4.hgh"))
-    O = ElementPsp(:O, psp = load_psp("hgh/lda/o-q6.hgh"))
+using DFTK
+using PseudoPotentialData
+include(joinpath(@__DIR__, "setup_utils.jl"))
+
+function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1],
+                     supersampling = 2)
+    # same GTH pseudopotentials as the former hgh/lda/ti-q4 and hgh/lda/o-q6
+    family = PseudoFamily("cp2k.nc.sr.lda.v0_1.largecore.gth")
+    Ti = ElementPsp(:Ti, family)
+    O = ElementPsp(:O, family)
     atoms = [Ti, Ti, O, O, O, O]
     positions = [
         [0.5, 0.5, 0.5],  # Ti
@@ -19,22 +26,12 @@ function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1])
 
     #model = model_PBE(lattice, atoms, positions)
 
+    model_prim = model_LDA(lattice, atoms, positions)
+    model = model_prim
     if (prod(supercell_size) != 1)
         lattice, atoms, positions = create_supercell(lattice, atoms, positions, supercell_size)
+        model = model_LDA(lattice, atoms, positions)
     end
 
-    model = model_LDA(lattice, atoms, positions)
-    # k-point grid (Regular Monkhorst-Pack grid)
-    ss = 4
-
-    if isa(Ecut, Number)
-        fft_size_ref = compute_fft_size(model, Ecut; supersampling = ss)
-        basis = PlaneWaveBasis(model; Ecut = Ecut, kgrid, fft_size = fft_size_ref)
-        return [model, basis]
-    elseif isa(Ecut, Array)
-        basis_arr = [PlaneWaveBasis(model; Ecut = e, kgrid, fft_size = compute_fft_size(model, e; supersampling = ss)) for e = Ecut]
-        return [model, basis_arr]
-    else
-        throw("invalid type of Ecut")
-    end
+    return setup_bases(model_prim, model, Ecut, kgrid, supercell_size; supersampling)
 end

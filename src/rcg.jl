@@ -14,7 +14,8 @@ DFTK.@timing function riemannian_conjugate_gradient(
         transport_grad = DifferentiatedRetractionTransport(),
         check_convergence_early = true, #check convergence before expensive gradient calculation
         iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.1),
-        do_rayleigh_ritz = true
+        do_rayleigh_ritz = true,
+        levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
     ) where {T}
     #println("Ecut: $(basis.Ecut) solve RCG")
 
@@ -58,6 +59,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
+    push!(levels, basis.Ecut)
 
     T_η_old = nothing
     gamma = inner_product_DFTK(basis, res, grad)
@@ -67,7 +69,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
     #initial callback
     info = (;
         ham = H, ψ, grad, res, η, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = nothing, ρout = ρ, n_iter,
-        energies, cost, algorithm = "RCG",
+        energies, cost, algorithm = "RCG", levels,
     )
     #callback(info)
 
@@ -101,7 +103,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
         if check_convergence_early
             info = (;
                 ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = nothing, ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, cost, start_ns, algorithm = "RCG",
+                energies, cost, start_ns, algorithm = "RCG", levels,
             )
             callback(info)
             if is_converged(info)
@@ -111,6 +113,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
         #calculate_gradient
         grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)
+        push!(levels, basis.Ecut)
         gamma = inner_product_DFTK(basis, res, grad)
 
         # calculate transport of η
@@ -134,7 +137,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
             # update info and callback
             info = (;
                 ham = H, ψ, grad, res, η, τ, basis, converged = false, stage = :iterate, norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρin = ρ_prev, ρout = ρ, n_iter,
-                energies, cost, start_ns, algorithm = "RCG",
+                energies, cost, start_ns, algorithm = "RCG", levels,
             )
             callback(info)
             if is_converged(info)
@@ -172,7 +175,7 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
     info = (;
         ham = H, ψ, grad, res, η, τ, basis, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis, res), norm_grad = sqrt(abs(inner_product_DFTK(basis, res, grad))), ρ, eigenvalues, occupation, εF, n_iter,
-        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG",
+        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "RCG", levels,
     )
     callback(info)
 

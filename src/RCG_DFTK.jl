@@ -31,7 +31,11 @@ export two_level_riemannian_optimization,
     nested_iteration,
     nested_earcg,
     nested_h1rcg,
-    nested_scf
+    nested_scf,
+    NestedItConvergenceErrEstimate,
+    AbstractRefinementCondition,
+    EstimateL2Norm,
+    EstimateH1Norm
 export AbstractVectorMultilevelMap,
     ProjectionMap,
     PseudoInverse_1_2_Map,
@@ -44,7 +48,10 @@ export AbstractCostResidual,
     CoarseGridCostResidual,
     ApproxCoarseGridCostResidual
 export AbstractCoarseCondition,
-    ToleranceMinStepCoarseCondition
+    ToleranceMinStepCoarseCondition,
+    CycleCoarseCondition,
+    VCycle,
+    SawtoothCycle
 export AbstractCoarseDensity,
     RecalculateDensity,
     InterpolateDensity

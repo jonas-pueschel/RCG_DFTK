@@ -14,14 +14,38 @@ function norm_DFTK(basis, ξ)
     return sqrt(real(sum(ξ2)))
 end
 
+# H1 analogue of norm_DFTK, ‖ξ‖²_H1 = Σ_G (1 + |k+G|²) |ξ_G|²
+function h1_norm_DFTK(basis, ξ)
+    n_cols = size(ξ[1])[2]
+    ξ2 = map(basis.kpoints, ξ) do kpt, ξk
+        w = 1 .+ norm.(DFTK.Gplusk_vectors_cart(basis, kpt)) .^ 2
+        real(dot(ξk, w .* ξk))
+    end
+    return sqrt(sum(ξ2 .* basis.kweights) * n_cols)
+end
+
+# H1 distance of the closest representatives in L2: ‖ψU - φ‖_H1 with the Procrustes rotation
+# U = polar factor of ψ'φ (with the L2 norm, this is grassmann_dist_DFTK)
+function h1_dist_DFTK(basis, ψ, φ)
+    length(ψ) == length(φ) || throw(DimensionMismatch("X and Y must have equal length"))
+    diff = map(ψ, φ) do ψk, φk
+        size(ψk) == size(φk) || throw(DimensionMismatch("size mismatch"))
+        F = svd(ψk' * φk)
+        ψk * (F.U * F.Vt) - φk
+    end
+    return h1_norm_DFTK(basis, diff)
+end
+
 function grassmann_dist_DFTK(basis, ψ, φ)
     length(ψ) == length(φ) || throw(DimensionMismatch("X and Y must have equal length"))
     d2 = zero(real(float(eltype(first(ψ)))))
     n_cols = size(ψ[1])[2]
     for (ψk, φk, weight) in zip(ψ, φ, basis.kweights)
         size(ψk) == size(φk) || throw(DimensionMismatch("size mismatch"))
-        p = size(ψk, 2)
-        d2 += max(2p - 2 * sum(svdvals(ψk' * φk)), 0) * weight   # clamp tiny negative round-off
+        # 2p - 2 Σ cos θ_i, evaluated without cancellation: the singular values of the
+        # projection residual are sin θ_i, and 1 - cos θ = sin²θ / (1 + cos θ)
+        s = svdvals(φk - ψk * (ψk' * φk))
+        d2 += sum(2 .* s .^ 2 ./ (1 .+ sqrt.(max.(1 .- s .^ 2, 0)))) * weight
     end
     return sqrt(d2 * n_cols)
 end

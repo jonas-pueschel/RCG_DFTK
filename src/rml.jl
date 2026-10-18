@@ -2,7 +2,7 @@
 multilevel rcg variant
 """
 
-rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, coarse_cost_residual = CoarseGridCostResidual) = function (ψ_c, ρ_c, Rres, tol)
+rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, coarse_cost_residual = CoarseGridCostResidual, levels = Float64[]) = function (ψ_c, ρ_c, Rres, tol)
     cr = coarse_cost_residual(ψ_c, Rres)
     is_converged = RcgConvergenceResidualMGH(tol, 0.1, ψ_c)
     result = riemannian_conjugate_gradient(basis; ρ = ρ_c, ψ = ψ_c, 
@@ -15,6 +15,7 @@ rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, coarse
             ConstantStep(1.0), 10
         ),
         do_rayleigh_ritz = false,
+        levels,
     )
     return result.ψ, result.ρ
 end
@@ -30,7 +31,8 @@ DFTK.@timing function two_level_riemannian_optimization(
     is_converged = RcgConvergenceResidual(tol),
     gradient_c = EAGradient(basis_c),
     coarse_cost_residual = CoarseGridCostResidual,
-    coarse_solver = rcg_coarse_solver(basis_c, gradient_c, maxiter_inner; coarse_cost_residual),
+    levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
+    coarse_solver = rcg_coarse_solver(basis_c, gradient_c, maxiter_inner; coarse_cost_residual, levels),
     coarse_cond_tol = 0.45,
     coarse_steps_dist = 1,
     force_post_smoothing = false,
@@ -116,6 +118,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         cc = true
     else 
         η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+        push!(levels, basis_f.Ecut)
         #println("Ecut: $(basis_f.Ecut); gradient step")
     end
     push!(coarse_corrections, cc)
@@ -129,7 +132,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     #initial callback
     info = (;
         ham = H, ψ = ψ_f, res, Rres, η, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = nothing, ρout = ρ_f, coarse_corrections, n_iter,
-        energies, cost, algorithm = "2gRG",
+        energies, cost, algorithm = "2gRG", levels,
     )
     check_convergence_early || callback(info)
 
@@ -164,12 +167,14 @@ DFTK.@timing function two_level_riemannian_optimization(
             #info contains new res, but old η!
             info = (;
                 ham = H, ψ = ψ_f, res, Rres, η, τ, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = ρ_prev, ρout = ρ_f, coarse_corrections, n_iter,
-                energies, cost, start_ns, algorithm = "2gRG",
+                energies, cost, start_ns, algorithm = "2gRG", levels,
             )
             callback(info)
             if is_converged(info) && (!force_post_smoothing || !coarse_corrections[end])
                 break
             end
+            # do not compute a direction (possibly a coarse correction) that is never used
+            n_iter >= maxiter && break
         end
 
 
@@ -191,6 +196,7 @@ DFTK.@timing function two_level_riemannian_optimization(
 
         if !cc
             η = - calculate_gradient(ψ_f, Hψ_f, H, Λ, res, gradient)
+            push!(levels, basis_f.Ecut)
             #println("Ecut: $(basis_f.Ecut); gradient step")
         end
         push!(coarse_corrections, cc)
@@ -199,7 +205,7 @@ DFTK.@timing function two_level_riemannian_optimization(
         if !check_convergence_early
             info = (;
                 ham = H, ψ = ψ_f, res, Rres, η, τ, basis = basis_f, converged = false, stage = :iterate, norm_res = norm_DFTK(basis_f, res), ρin = ρ_prev, ρout = ρ_f, coarse_corrections = coarse_corrections[1:end-1], n_iter,
-                energies, cost, start_ns, algorithm = "2gRG",
+                energies, cost, start_ns, algorithm = "2gRG", levels,
             )
             callback(info)
             if is_converged(info) && (!force_post_smoothing || !coarse_corrections[end-1])
@@ -237,7 +243,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     info = (;
         ham = H, ψ = ψ_f, res, Rres, η, τ, basis = basis_f, energies, cost, converged = is_converged(info), norm_res = norm_DFTK(basis_f, res), 
         ρ = ρ_f, eigenvalues, occupation, εF, coarse_corrections, n_iter,
-        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "2gRG",
+        stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, algorithm = "2gRG", levels,
     )
     callback(info)
 
@@ -281,7 +287,15 @@ DFTK.@timing function multilevel_riemannian_optimization(
         ConstantStep(1.0), 10
     ) for basis =  basis_arr[2:end]],
     do_rayleigh_ritz = true,
-    n_iter = 0
+    n_iter = 0,
+    levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
+    # classical cycle (e.g. VCycle(1, 1), SawtoothCycle(1)) instead of the adaptive one. Replaces
+    # coarse_cond_functor; the intermediate levels perform exactly one cycle without convergence
+    # check, the coarsest level is still solved by RCG up to the coarse tolerance.
+    cycle = nothing,
+    # cycle pattern on the finest level only, e.g. SawtoothCycle(ν_post) to skip the pre-smoothing
+    # there (the post-smoothing of the previous cycle already precedes the next coarse correction)
+    cycle_finest = cycle,
 )
     for k = 1:(length(basis_arr) - 1)
         @assert basis_arr[k].Ecut < basis_arr[k + 1].Ecut
@@ -290,15 +304,17 @@ DFTK.@timing function multilevel_riemannian_optimization(
     if length(basis_arr) <= 1
         throw("Basis array needs to contain at least two elements")
     elseif length(basis_arr) == 2
-        ml_coarse_solver = rcg_coarse_solver(basis_arr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual)
+        ml_coarse_solver = rcg_coarse_solver(basis_arr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual, levels)
     else
         ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
             cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
             result = multilevel_riemannian_optimization(basis_arr[1:end-1]; ρ = ρ_c, ψ = ψ_c, 
                 tol,
-                maxiter = maxiter_inner,
+                maxiter = isnothing(cycle) ? maxiter_inner : cycle_length(cycle),
+                maxiter_inner = isnothing(cycle) ? 100 : maxiter_inner,
                 callback = callback_mid,
-                is_converged = RcgConvergenceResidual(tol), #TODO what to use here?
+                is_converged = isnothing(cycle) ? RcgConvergenceResidual(tol) : (info -> false), #TODO what to use here?
+                cycle,
                 coarse_cond_functor,
                 force_post_smoothing,
                 coarse_density,
@@ -311,7 +327,8 @@ DFTK.@timing function multilevel_riemannian_optimization(
                 check_convergence_early,
                 iteration_strats_fine = iteration_strats_fine[1:end-1],
                 iteration_strats_coarse = iteration_strats_coarse[1:end-1],
-                do_rayleigh_ritz = false
+                do_rayleigh_ritz = false,
+                levels,
             )
             return result.ψ, result.ρ
         end
@@ -320,7 +337,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     point_restriction = point_restriction_functor()
     multilevel_map = multilevel_map_functor(point_restriction)
     gradient = gradients[end]
-    coarse_cond = coarse_cond_functor(tol)
+    coarse_cond = isnothing(cycle) ? coarse_cond_functor(tol) : cycle_finest
     coarse_tol = coarse_tol_functor(tol)
     return two_level_riemannian_optimization(basis_arr[end-1], basis_arr[end]; 
         ρ, ψ, tol, maxiter, maxiter_inner, callback, is_converged, 
@@ -331,5 +348,6 @@ DFTK.@timing function multilevel_riemannian_optimization(
         iteration_strat_fine = iteration_strats_fine[end], 
         iteration_strat_coarse = iteration_strats_coarse[end], 
         do_rayleigh_ritz,
-        n_iter)
+        n_iter,
+        levels)
 end
