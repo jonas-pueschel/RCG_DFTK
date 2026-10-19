@@ -289,9 +289,10 @@ DFTK.@timing function multilevel_riemannian_optimization(
     do_rayleigh_ritz = true,
     n_iter = 0,
     levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
-    # classical cycle (e.g. VCycle(1, 1), SawtoothCycle(1)) instead of the adaptive one. Replaces
-    # coarse_cond_functor; the intermediate levels perform exactly one cycle without convergence
-    # check, the coarsest level is still solved by RCG up to the coarse tolerance.
+    # classical cycle (e.g. VCycle(1, 1), WCycle(1, 1), SawtoothCycle(1)) instead of the adaptive
+    # one. Replaces coarse_cond_functor; the intermediate levels perform cycle.γ cycles (one for
+    # V- and sawtooth, two for W-cycles) without convergence check, the coarsest level is still
+    # solved by RCG up to the coarse tolerance.
     cycle = nothing,
     # cycle pattern on the finest level only, e.g. SawtoothCycle(ν_post) to skip the pre-smoothing
     # there (the post-smoothing of the previous cycle already precedes the next coarse correction)
@@ -310,7 +311,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
             cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
             result = multilevel_riemannian_optimization(basis_arr[1:end-1]; ρ = ρ_c, ψ = ψ_c, 
                 tol,
-                maxiter = isnothing(cycle) ? maxiter_inner : cycle_length(cycle),
+                maxiter = isnothing(cycle) ? maxiter_inner : cycle.γ * cycle_length(cycle),
                 maxiter_inner = isnothing(cycle) ? 100 : maxiter_inner,
                 callback = callback_mid,
                 is_converged = isnothing(cycle) ? RcgConvergenceResidual(tol) : (info -> false), #TODO what to use here?

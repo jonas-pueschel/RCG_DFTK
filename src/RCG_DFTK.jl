@@ -51,6 +51,7 @@ export AbstractCoarseCondition,
     ToleranceMinStepCoarseCondition,
     CycleCoarseCondition,
     VCycle,
+    WCycle,
     SawtoothCycle
 export AbstractCoarseDensity,
     RecalculateDensity,

@@ -66,6 +66,11 @@ struct EstimateH1Norm <: AbstractRefinementCondition
 end
 error_norm(::EstimateH1Norm, basis, e) = h1_norm_DFTK(basis, e)
 
+struct AlwaysRefine <: AbstractRefinementCondition end
+error_norm(::AlwaysRefine, basis, e) = norm_DFTK(basis, e)
+(rc::AlwaysRefine)(info) = true
+
+
 """
     NestedItConvergenceErrEstimate(refinement_cond, tol; check_every = 1)
 

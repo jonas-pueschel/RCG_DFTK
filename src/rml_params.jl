@@ -305,13 +305,17 @@ end
 
 # classical (non-adaptive) cycles: every cycle consists of ν_pre smoothing (gradient) steps,
 # one coarse correction and ν_post smoothing steps. Used as coarse condition on every level;
-# the inner levels perform exactly one cycle, see multilevel_riemannian_optimization.
+# the inner levels perform γ cycles per coarse correction of the next finer level
+# (γ = 1: V-cycle, γ = 2: W-cycle), see multilevel_riemannian_optimization.
 struct CycleCoarseCondition <: AbstractCoarseCondition
     ν_pre::Int
     ν_post::Int
+    γ::Int
 end
-VCycle(ν_pre, ν_post = ν_pre) = CycleCoarseCondition(ν_pre, ν_post)
-SawtoothCycle(ν_post) = CycleCoarseCondition(0, ν_post)
+CycleCoarseCondition(ν_pre, ν_post) = CycleCoarseCondition(ν_pre, ν_post, 1)
+VCycle(ν_pre, ν_post = ν_pre) = CycleCoarseCondition(ν_pre, ν_post, 1)
+WCycle(ν_pre, ν_post = ν_pre) = CycleCoarseCondition(ν_pre, ν_post, 2)
+SawtoothCycle(ν_post) = CycleCoarseCondition(0, ν_post, 1)
 
 cycle_length(cc::CycleCoarseCondition) = cc.ν_pre + 1 + cc.ν_post
 

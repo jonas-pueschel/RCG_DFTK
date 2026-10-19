@@ -1,0 +1,153 @@
+\begin{tikzpicture}
+    \begin{axis}[
+    width={\textwidth}, height={0.8 * \textheight}, 
+    xlabel={CPU time in s}, 
+    xticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0},
+    rotate={0.0}},
+    %x tick label style={font={{\fontsize{8 pt}{11 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, 
+    xtick align={inside}, 
+    xmajorgrids={true}, 
+    x grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    ylabel={$\Delta E$}, 
+    %x axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, 
+    scaled y ticks={false}, 
+    ymode={log}, log basis y={10},
+    ytick align={inside}, 
+    %y tick style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, opacity={1.0}}, 
+    yticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, 
+    ymajorgrids={true},
+    y grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    %axis y line*={left}, 
+    %y axis line style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, line width={1}, solid}, 
+    colorbar={false}
+    ]
+
+\addplot[color=cpl1, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+22.41709528 8.126901818172882e-9 \\
+34.426021565 2.227675821586672e-9 \\
+58.554284698000004 3.730349362740526e-14 \\
+68.471652573 4.618527782440651e-14 \\
+}; 
+\addlegendentry{EA 7L}
+
+\addplot[only marks, color=cpl1, draw opacity={1.0}, line width={1}, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.014530650960013602 \\
+34.426021565 2.227675821586672e-9 \\
+};
+
+
+\addplot[color=cpl2, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+15.179182224000002 5.263143343370302e-8 \\
+27.261952491000002 5.426343818726309e-9 \\
+39.620197349 1.1546319456101628e-13 \\
+50.1394542 6.394884621840902e-14 \\
+62.512650298000004 5.3290705182007514e-14 \\
+74.046277194 6.039613253960852e-14 \\
+}; 
+\addlegendentry{EA 4L}
+
+\addplot[only marks, color=cpl2, draw opacity={1.0}, line width={1}, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.014530650960013602 \\
+27.261952491000002 5.426343818726309e-9 \\
+50.1394542 6.394884621840902e-14 \\
+};
+
+
+\addplot[color=unia-purple, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+11.839883567000001 5.201930505904784e-6 \\
+22.927395383 1.6957176462994994e-7 \\
+31.875928384 5.915978817938594e-11 \\
+40.676680153 9.059419880941277e-14 \\
+49.436204865 6.217248937900877e-14 \\
+58.901677103000004 5.684341886080802e-14 \\
+}; 
+\addlegendentry{EA 3L}
+
+\addplot[only marks, color=unia-purple, draw opacity={1.0}, line width={1}, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.014530650960013602 \\
+22.927395383 1.6957176462994994e-7 \\
+40.676680153 9.059419880941277e-14 \\
+};
+
+
+\addplot[color=cpl3, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+13.169052384 3.0144695404743516e-5 \\
+20.242296202000002 1.5005643216881026e-6 \\
+30.482546287 2.7297790694547075e-9 \\
+37.276576039000005 1.559889994950936e-10 \\
+47.994921492 3.3573144264664734e-13 \\
+54.696329097 7.993605777301127e-14 \\
+65.18202936600001 6.394884621840902e-14 \\
+71.467242767 6.394884621840902e-14 \\
+}; 
+\addlegendentry{EA 2L}
+
+\addplot[only marks, color=cpl3, draw opacity={1.0}, line width={1}, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+13.169052384 3.0144695404743516e-5 \\
+30.482546287 2.7297790694547075e-9 \\
+47.994921492 3.3573144264664734e-13 \\
+65.18202936600001 6.394884621840902e-14 \\
+};
+
+
+\addplot[color=cpl4, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+8.690281708 0.00032652747243311353 \\
+34.54469169 5.691122240136792e-9 \\
+45.711094092 4.796163466380676e-14 \\
+54.418537062000006 1.7763568394002505e-15 \\
+}; 
+\addlegendentry{EA 4R}
+
+\addplot[only marks, color=cpl4, draw opacity={1.0}, line width={1}, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.014530650960013602 \\
+8.690281708 0.00032652747243311353 \\
+};
+
+
+\addplot[color=cpl6, draw opacity={1.0}, line width={1}, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.014530650960013602 \\
+12.651502659 3.014469540296716e-5 \\
+31.890458361 1.5328630773581153e-6 \\
+50.396029789 2.2857559400790706e-8 \\
+62.463927867 2.886579864025407e-10 \\
+81.580593471 6.9260153168215766e-12 \\
+100.139225342 1.1723955140041653e-13 \\
+118.75882881400001 6.217248937900877e-14 \\
+138.379038849 6.217248937900877e-14 \\
+}; 
+\addlegendentry{EARCG}
+
+\end{axis}
+\end{tikzpicture}

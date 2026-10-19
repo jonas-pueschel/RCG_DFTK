@@ -47,11 +47,11 @@ DFTK.@timing function riemannian_full_multigrid(
     # correction from the fine residual, i.e. with StandardCostResiudal() instead of
     # CoarseGridCostResidual(ψ_c, Rres)
     # TODO: Ecut growth and Ecut dist? i.e. dynamically generate basis?
-    basis_distance = 3,
+    basis_distance = 1,
     greedy_cost_residual = false,
     only_rcg = false,
     levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
-    # classical cycle (e.g. VCycle(1, 1), SawtoothCycle(1)) for the multilevel coarse solves,
+    # classical cycle (e.g. VCycle(1, 1), WCycle(1, 1), SawtoothCycle(1)) for the multilevel coarse solves,
     # see multilevel_riemannian_optimization. The cycles are repeated until the coarse tolerance is met.
     cycle = nothing,
     cycle_finest = cycle,

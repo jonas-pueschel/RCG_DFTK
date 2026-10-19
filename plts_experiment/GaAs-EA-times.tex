@@ -1,0 +1,569 @@
+\begin{tikzpicture}
+    \begin{axis}[at={(0, 0)},
+    width={0.5 * \textwidth}, height={0.75 * \textheight},
+    legend cell align={left}, legend columns={-1},
+    legend style={/tikz/every even column/.append style={column sep=0.5cm},
+    color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, 
+    solid, fill={rgb,1:red,1.0;green,1.0;blue,1.0}, fill opacity={1.0}, 
+    text opacity={1.0}, font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, 
+    text={rgb,1:red,0.0;green,0.0;blue,0.0}, cells={anchor={center}}, at={(0.12, 1.05)}, anchor={south west}}, 
+    xlabel={CPU time in s}, 
+    xticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0},
+    rotate={0.0}},
+    xmax = {3.8556131224710004e11},
+    xtick align={inside}, 
+    xmajorgrids={true}, 
+    x grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    ylabel={$\Delta E$}, 
+    scaled y ticks={false}, 
+    ymode={log}, log basis y={10},
+    ytick align={inside}, 
+    yticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, 
+    ymajorgrids={true},
+    y grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    colorbar={false}
+    ]
+
+        \only<1,7>{
+            
+\addplot[color=cpl6, draw opacity={1.0}, line width={1}, visible on=<1->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+32.197730476000004 3.0714439706258645e-5 \\
+78.759667281 1.1649695181858988e-6 \\
+122.05058308100001 1.742376909419363e-8 \\
+155.696720002 3.1252689325356187e-10 \\
+201.978845005 1.3450573987938697e-11 \\
+247.07243273300003 3.0020430585864233e-13 \\
+279.504736777 1.7763568394002505e-14 \\
+312.144912718 1.4210854715202004e-14 \\
+345.93003365600003 1.5987211554602254e-14 \\
+};
+        }
+        \only<2-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<1->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+32.197730476000004 3.0714439706258645e-5 \\
+78.759667281 1.1649695181858988e-6 \\
+122.05058308100001 1.742376909419363e-8 \\
+155.696720002 3.1252689325356187e-10 \\
+201.978845005 1.3450573987938697e-11 \\
+247.07243273300003 3.0020430585864233e-13 \\
+279.504736777 1.7763568394002505e-14 \\
+312.144912718 1.4210854715202004e-14 \\
+345.93003365600003 1.5987211554602254e-14 \\
+};
+        }
+\addlegendentry{EARCG}
+
+
+        \only<2,7>{
+            
+\addplot[color=cpl4, draw opacity={1.0}, line width={1}, visible on=<2->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+18.301073069 0.0003397414678349975 \\
+74.635168276 6.07071726221875e-9 \\
+101.14469732900001 3.019806626980426e-14 \\
+121.440107306 1.7763568394002505e-15 \\
+};\addplot[only marks, color=cpl4, draw opacity={1.0}, line width={1}, visible on=<2->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+18.301073069 0.0003397414678349975 \\
+};
+
+
+        }
+        \only<3-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<2->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+18.301073069 0.0003397414678349975 \\
+74.635168276 6.07071726221875e-9 \\
+101.14469732900001 3.019806626980426e-14 \\
+121.440107306 1.7763568394002505e-15 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<2->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+18.301073069 0.0003397414678349975 \\
+};
+
+
+        }
+\addlegendentry{EA 4R}
+
+
+        \only<3,7>{
+            
+\addplot[color=cpl1, draw opacity={1.0}, line width={1}, visible on=<3->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+49.334351139000006 7.244700839237339e-9 \\
+77.852584578 4.823998978054078e-10 \\
+129.432655419 2.6645352591003757e-14 \\
+149.826255454 2.3092638912203256e-14 \\
+};\addplot[only marks, color=cpl1, draw opacity={1.0}, line width={1}, visible on=<3->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+77.852584578 4.823998978054078e-10 \\
+};
+
+
+        }
+        \only<4-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<3->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+49.334351139000006 7.244700839237339e-9 \\
+77.852584578 4.823998978054078e-10 \\
+129.432655419 2.6645352591003757e-14 \\
+149.826255454 2.3092638912203256e-14 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<3->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+77.852584578 4.823998978054078e-10 \\
+};
+
+
+        }
+\addlegendentry{EA 7L}
+
+
+        \only<4,7>{
+            
+\addplot[color=cpl2, draw opacity={1.0}, line width={1}, visible on=<4->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+31.986813943 4.071092973845225e-8 \\
+62.690924962000004 2.3988562247723166e-9 \\
+88.32698399600001 7.638334409421077e-14 \\
+112.222565903 1.5987211554602254e-14 \\
+132.090506299 1.4210854715202004e-14 \\
+};\addplot[only marks, color=cpl2, draw opacity={1.0}, line width={1}, visible on=<4->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+62.690924962000004 2.3988562247723166e-9 \\
+112.222565903 1.5987211554602254e-14 \\
+};
+
+
+        }
+        \only<5-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<4->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+31.986813943 4.071092973845225e-8 \\
+62.690924962000004 2.3988562247723166e-9 \\
+88.32698399600001 7.638334409421077e-14 \\
+112.222565903 1.5987211554602254e-14 \\
+132.090506299 1.4210854715202004e-14 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<4->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+62.690924962000004 2.3988562247723166e-9 \\
+112.222565903 1.5987211554602254e-14 \\
+};
+
+
+        }
+\addlegendentry{EA 4L}
+
+
+        \only<5,7>{
+            
+\addplot[color=unia-purple, draw opacity={1.0}, line width={1}, visible on=<5->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+25.496099972000003 5.843052667486859e-6 \\
+51.670776406 9.41320354996833e-8 \\
+69.703589682 8.976641652225226e-11 \\
+91.471839939 8.171241461241152e-14 \\
+108.65460044800001 2.1316282072803006e-14 \\
+129.031386588 1.7763568394002505e-14 \\
+};\addplot[only marks, color=unia-purple, draw opacity={1.0}, line width={1}, visible on=<5->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+51.670776406 9.41320354996833e-8 \\
+91.471839939 8.171241461241152e-14 \\
+};
+
+
+        }
+        \only<6-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<5->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+25.496099972000003 5.843052667486859e-6 \\
+51.670776406 9.41320354996833e-8 \\
+69.703589682 8.976641652225226e-11 \\
+91.471839939 8.171241461241152e-14 \\
+108.65460044800001 2.1316282072803006e-14 \\
+129.031386588 1.7763568394002505e-14 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<5->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.013797732148340458 \\
+51.670776406 9.41320354996833e-8 \\
+91.471839939 8.171241461241152e-14 \\
+};
+
+
+        }
+\addlegendentry{EA 3L}
+
+
+        \only<6,7>{
+            
+\addplot[color=cpl3, draw opacity={1.0}, line width={1}, visible on=<6->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+32.452520695000004 3.0714439706258645e-5 \\
+45.908525534000006 1.3066819057883095e-6 \\
+72.60671019200001 2.302737556192369e-9 \\
+85.77248528000001 1.3072565252514323e-10 \\
+112.75681062700001 1.9539925233402755e-13 \\
+126.153854596 2.6645352591003757e-14 \\
+151.280325877 1.4210854715202004e-14 \\
+};\addplot[only marks, color=cpl3, draw opacity={1.0}, line width={1}, visible on=<6->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+32.452520695000004 3.0714439706258645e-5 \\
+72.60671019200001 2.302737556192369e-9 \\
+112.75681062700001 1.9539925233402755e-13 \\
+};
+
+
+        }
+        \only<7-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<6->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.013797732148340458 \\
+32.452520695000004 3.0714439706258645e-5 \\
+45.908525534000006 1.3066819057883095e-6 \\
+72.60671019200001 2.302737556192369e-9 \\
+85.77248528000001 1.3072565252514323e-10 \\
+112.75681062700001 1.9539925233402755e-13 \\
+126.153854596 2.6645352591003757e-14 \\
+151.280325877 1.4210854715202004e-14 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<6->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+32.452520695000004 3.0714439706258645e-5 \\
+72.60671019200001 2.302737556192369e-9 \\
+112.75681062700001 1.9539925233402755e-13 \\
+};
+
+
+        }
+\addlegendentry{EA 2L}
+
+\end{axis}
+
+    \begin{axis}[at={(0.5 * \textwidth, 0)},
+    width={0.5 * \textwidth}, height={0.75 * \textheight}, 
+    xlabel={CPU time in s}, 
+    xticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0},
+    rotate={0.0}},
+    xmax = {3.8556131224710004e11},
+    xtick align={inside}, 
+    xmajorgrids={true}, 
+    x grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    ylabel={norm res}, 
+    scaled y ticks={false}, 
+    ymode={log}, log basis y={10},
+    ytick align={inside}, 
+    yticklabel style={font={{\fontsize{8 pt}{10.4 pt}\selectfont}}, color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={1.0}, rotate={0.0}}, 
+    ymajorgrids={true},
+    y grid style={color={rgb,1:red,0.0;green,0.0;blue,0.0}, draw opacity={0.1}, line width={0.5}, solid}, 
+    colorbar={false}
+    ]
+
+        \only<1,7>{
+            
+\addplot[color=cpl6, draw opacity={1.0}, line width={1}, visible on=<1->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+32.197730476000004 0.011604777615251968 \\
+78.759667281 0.003410185213964927 \\
+122.05058308100001 0.0003029001654775403 \\
+155.696720002 3.245621309731827e-5 \\
+201.978845005 1.0724476001032284e-5 \\
+247.07243273300003 1.6272170625840497e-6 \\
+279.504736777 1.5786187297588048e-7 \\
+312.144912718 2.162734969746992e-8 \\
+345.93003365600003 2.5589431451893083e-9 \\
+};
+        }
+        \only<2-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<1->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+32.197730476000004 0.011604777615251968 \\
+78.759667281 0.003410185213964927 \\
+122.05058308100001 0.0003029001654775403 \\
+155.696720002 3.245621309731827e-5 \\
+201.978845005 1.0724476001032284e-5 \\
+247.07243273300003 1.6272170625840497e-6 \\
+279.504736777 1.5786187297588048e-7 \\
+312.144912718 2.162734969746992e-8 \\
+345.93003365600003 2.5589431451893083e-9 \\
+};
+        }
+        \only<2,7>{
+            
+\addplot[color=cpl4, draw opacity={1.0}, line width={1}, visible on=<2->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+18.301073069 0.13408074143795448 \\
+74.635168276 0.0008878862869684034 \\
+101.14469732900001 1.4821160859532146e-6 \\
+121.440107306 5.9281974225916875e-9 \\
+};\addplot[only marks, color=cpl4, draw opacity={1.0}, line width={1}, visible on=<2->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+18.301073069 0.13408074143795448 \\
+};
+
+
+        }
+        \only<3-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<2->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+18.301073069 0.13408074143795448 \\
+74.635168276 0.0008878862869684034 \\
+101.14469732900001 1.4821160859532146e-6 \\
+121.440107306 5.9281974225916875e-9 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<2->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+18.301073069 0.13408074143795448 \\
+};
+
+
+        }
+        \only<3,7>{
+            
+\addplot[color=cpl1, draw opacity={1.0}, line width={1}, visible on=<3->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+49.334351139000006 0.0008994547398225221 \\
+77.852584578 3.3770664274926213e-5 \\
+129.432655419 9.658970435847798e-7 \\
+149.826255454 2.6639910470435113e-9 \\
+};\addplot[only marks, color=cpl1, draw opacity={1.0}, line width={1}, visible on=<3->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+77.852584578 3.3770664274926213e-5 \\
+};
+
+
+        }
+        \only<4-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<3->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+49.334351139000006 0.0008994547398225221 \\
+77.852584578 3.3770664274926213e-5 \\
+129.432655419 9.658970435847798e-7 \\
+149.826255454 2.6639910470435113e-9 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<3->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+77.852584578 3.3770664274926213e-5 \\
+};
+
+
+        }
+        \only<4,7>{
+            
+\addplot[color=cpl2, draw opacity={1.0}, line width={1}, visible on=<4->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+31.986813943 0.0012040535167912726 \\
+62.690924962000004 7.349288080853019e-5 \\
+88.32698399600001 2.7246251216430967e-6 \\
+112.222565903 1.0468129967156124e-8 \\
+132.090506299 8.724951038781782e-9 \\
+};\addplot[only marks, color=cpl2, draw opacity={1.0}, line width={1}, visible on=<4->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+62.690924962000004 7.349288080853019e-5 \\
+112.222565903 1.0468129967156124e-8 \\
+};
+
+
+        }
+        \only<5-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<4->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+31.986813943 0.0012040535167912726 \\
+62.690924962000004 7.349288080853019e-5 \\
+88.32698399600001 2.7246251216430967e-6 \\
+112.222565903 1.0468129967156124e-8 \\
+132.090506299 8.724951038781782e-9 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<4->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+62.690924962000004 7.349288080853019e-5 \\
+112.222565903 1.0468129967156124e-8 \\
+};
+
+
+        }
+        \only<5,7>{
+            
+\addplot[color=unia-purple, draw opacity={1.0}, line width={1}, visible on=<5->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+25.496099972000003 0.0218197459193663 \\
+51.670776406 0.00047392247577581327 \\
+69.703589682 9.209609889225806e-5 \\
+91.471839939 7.33534176926836e-7 \\
+108.65460044800001 5.797520038229512e-7 \\
+129.031386588 1.0806898432753962e-9 \\
+};\addplot[only marks, color=unia-purple, draw opacity={1.0}, line width={1}, visible on=<5->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+51.670776406 0.00047392247577581327 \\
+91.471839939 7.33534176926836e-7 \\
+};
+
+
+        }
+        \only<6-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<5->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+25.496099972000003 0.0218197459193663 \\
+51.670776406 0.00047392247577581327 \\
+69.703589682 9.209609889225806e-5 \\
+91.471839939 7.33534176926836e-7 \\
+108.65460044800001 5.797520038229512e-7 \\
+129.031386588 1.0806898432753962e-9 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<5->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+0.0 0.5492142298900626 \\
+51.670776406 0.00047392247577581327 \\
+91.471839939 7.33534176926836e-7 \\
+};
+
+
+        }
+        \only<6,7>{
+            
+\addplot[color=cpl3, draw opacity={1.0}, line width={1}, visible on=<6->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+32.452520695000004 0.011604777615182853 \\
+45.908525534000006 0.005926617250670739 \\
+72.60671019200001 0.00010659069428835181 \\
+85.77248528000001 6.364926618109394e-5 \\
+112.75681062700001 1.0278021377750486e-6 \\
+126.153854596 7.125985544386781e-7 \\
+151.280325877 9.79571837966488e-9 \\
+};\addplot[only marks, color=cpl3, draw opacity={1.0}, line width={1}, visible on=<6->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+32.452520695000004 0.011604777615182853 \\
+72.60671019200001 0.00010659069428835181 \\
+112.75681062700001 1.0278021377750486e-6 \\
+};
+
+
+        }
+        \only<7-6>{
+            
+\addplot[color=light-gray, draw opacity={1.0}, line width={1}, visible on=<6->, solid, mark=x]
+    table[row sep={\\}]
+    { \\
+0.0 0.5492142298900626 \\
+32.452520695000004 0.011604777615182853 \\
+45.908525534000006 0.005926617250670739 \\
+72.60671019200001 0.00010659069428835181 \\
+85.77248528000001 6.364926618109394e-5 \\
+112.75681062700001 1.0278021377750486e-6 \\
+126.153854596 7.125985544386781e-7 \\
+151.280325877 9.79571837966488e-9 \\
+};\addplot[only marks, color=light-gray, draw opacity={1.0}, line width={1}, visible on=<6->, solid, text mark=$\bullet$, forget plot]
+        table[row sep={\\}]
+        {
+            \\
+32.452520695000004 0.011604777615182853 \\
+72.60671019200001 0.00010659069428835181 \\
+112.75681062700001 1.0278021377750486e-6 \\
+};
+
+
+        }\end{axis}
+\end{tikzpicture}
