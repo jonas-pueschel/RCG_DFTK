@@ -210,6 +210,8 @@ DFTK.@timing function riemannian_full_multigrid(
                     maxiter = maxiter_inner,
                     maxiter_inner,
                     callback = callback_mid,
+                    callback_mid,
+                    callback_coarse,
                     is_converged = RcgConvergenceResidual(tol), # TODO what to use here?
                     coarse_cond_functor,
                     force_post_smoothing,

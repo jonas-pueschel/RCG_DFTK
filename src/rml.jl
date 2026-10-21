@@ -126,7 +126,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     #check if η is a descent direction. If not, restart
     desc = inner_product_DFTK(basis_f, η, res)
     if (desc >= 0)
-        @warn "the search direction is not a descent direction, try to use a better initial guess"
+        @warn "the search direction at Ecut = $(basis_f.Ecut) is not a descent direction, try to use a better initial guess"
     end
 
     #initial callback
@@ -216,7 +216,8 @@ DFTK.@timing function two_level_riemannian_optimization(
         #check if η is a descent direction. If not, restart
         desc = inner_product_DFTK(basis_f, η, res)
         if (desc >= 0)
-            @warn "the search direction is not a descent direction, try to use a better initial guess"
+            #TODO make this a @warn again; only for debugging
+             @warn "the search direction at Ecut = $(basis_f.Ecut) is not a descent direction, try to use a better initial guess"
         end
     end
 
@@ -312,8 +313,10 @@ DFTK.@timing function multilevel_riemannian_optimization(
             result = multilevel_riemannian_optimization(basis_arr[1:end-1]; ρ = ρ_c, ψ = ψ_c, 
                 tol,
                 maxiter = isnothing(cycle) ? maxiter_inner : cycle.γ * cycle_length(cycle),
-                maxiter_inner = isnothing(cycle) ? 100 : maxiter_inner,
+                maxiter_inner,
                 callback = callback_mid,
+                callback_mid,
+                callback_coarse,
                 is_converged = isnothing(cycle) ? RcgConvergenceResidual(tol) : (info -> false), #TODO what to use here?
                 cycle,
                 coarse_cond_functor,

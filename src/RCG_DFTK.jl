@@ -131,6 +131,6 @@ export RcgDefaultCallback,
     RcgConvergenceGradient,
     RcgConvergenceResidual,
     RfmgDefaultCallback
-
+export AlgebraicMap
 
 end # module RCG_DFTK

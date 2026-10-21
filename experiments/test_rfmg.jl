@@ -23,9 +23,9 @@ include("setups/TiO2_setup.jl")
 # Silicon lattice constant in Bohr
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630, 1010]
 #Ecuts = [10, 40, 160, 630]
-model_name = "TiO2"
-#setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [2,2,2])
-setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
+model_name = "silicon_supercell"
+setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [2,2,1])
+#setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630]
 model, basis_arr = setup(; Ecut = Ecuts); 
 _, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts); 
@@ -37,7 +37,7 @@ scfres_start = self_consistent_field(basis_c; tol = 1e-2);
 ρ_c = scfres_start.ρ
 
 # Convergence tolerance
-tol = 1.0e-7;
+tol = 1.0e-9;
 ψ_ref = nothing
 basis_ref = nothing
 
@@ -72,8 +72,7 @@ res_rfmg1 = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  maxiter = 20,
  maxiter_inner = 3,
  coarse_model_tol_outer = 0.0,
- refinement_tol = 0.5,
- #refinement_cond = RCG_DFTK.AlwaysRefine(),
+ refinement_tol = 0.4,
  gradients = [H1Gradient(basis) for basis = basis_arr], 
  greedy_cost_residual = false,
  only_rcg = false,
@@ -110,8 +109,8 @@ println(cb_nh1rcg.times[end])
 # nested SCF
 println("\nnested SCF")
 cb_nscf = RfmgDefaultCallback(;basis_ref, ψ_ref)
-res_nscf = nested_scf(basis_arr[5:end], basis_arr_ref[5:end]; tol = 1e-8, refinement_tol = 0.2, check_every = 1,
-# ψ = ψ_c, ρ = ρ_c, 
+res_nscf = nested_scf(basis_arr[1:end], basis_arr_ref[1:end]; tol = 1e-8, refinement_tol = 0.2, check_every = 1,
+ψ = ψ_c, ρ = ρ_c, 
 callback = cb_nscf);
 println(cb_nscf.times[end])
 
