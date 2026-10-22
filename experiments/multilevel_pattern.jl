@@ -58,5 +58,5 @@ result = multilevel_riemannian_optimization(basis_arr[lvls]; ψ = ψ1, ρ = ρ1,
     maxiter = 100,
     coarse_model_tol = 1e-2,
     coarse_cond_tol = 0.45,
-        coarse_tol_functor = (tol) -> RCG_DFTK.RelativeResTolerance(1e-2, tol),
+        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-2),
     gradients = [H1Gradient(basis) for basis = basis_arr[lvls]]);

@@ -53,7 +53,7 @@ function precompile_methods()
         gradient = EAGradient(basis_f, CorrectedRelativeΛShift(μ = 0.0)),
         check_convergence_early = true,
         maxiter = 3,
-        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1, tol),
+        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1),
         coarse_cond = RCG_DFTK.ToleranceMinStepCoarseCondition(0.3, tol),
         iteration_strat_coarse = AdaptiveBacktracking(
             ModifiedSecantRule(0.05, 0.1, 1.0e-12, 0.5),
@@ -69,7 +69,7 @@ function precompile_methods()
         check_convergence_early = true,
         coarse_density = RCG_DFTK.RecalculateDensity(),
         maxiter = 3,
-        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1, tol),
+        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1),
         coarse_cond = RCG_DFTK.ToleranceMinStepCoarseCondition(0.3, tol),
         );
     #println(cb1.times_tot[end] / 1e9)

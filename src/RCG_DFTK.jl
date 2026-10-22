@@ -46,9 +46,11 @@ export RcgConvergenceResidualMGH
 export AbstractCostResidual, 
     StandardCostResiudal,
     CoarseGridCostResidual,
-    ApproxCoarseGridCostResidual
+    ApproxCoarseGridCostResidual,
+    GreedyCostResidual
 export AbstractCoarseCondition,
     ToleranceMinStepCoarseCondition,
+    EstimateErrorCoarseCondition,
     CycleCoarseCondition,
     VCycle,
     WCycle,

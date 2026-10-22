@@ -71,6 +71,29 @@ error_norm(::AlwaysRefine, basis, e) = norm_DFTK(basis, e)
 (rc::AlwaysRefine)(info) = true
 
 
+mutable struct EstimateErrorCoarseCondition <: AbstractCoarseCondition
+    η
+    norm
+    dist
+    n_iter 
+    function EstimateErrorCoarseCondition(η; norm = :L2, dist = 1)
+        return new(η, norm, dist, 0)
+    end
+end
+
+function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::EstimateErrorCoarseCondition) where {T}
+    if (cc.n_iter > n_iter)
+        return false
+    end
+    est_err = invert_refinement_metric_improved(basis_f, ψ_f, res)
+    est_err_coarse = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, est_err, ProjectionMap())
+    nrm(b,v) = cc.norm == :L2 ? norm_DFTK(b, v) : h1_norm_DFTK(b,v)
+    c1 = nrm(basis_c, est_err_coarse) ≥ cc.η * nrm(basis_f, est_err)
+    c1 && (cc.n_iter = cc.n_iter + cc.dist + 1)
+    return c1
+end
+
+
 """
     NestedItConvergenceErrEstimate(refinement_cond, tol; check_every = 1)
 
@@ -152,4 +175,30 @@ function (conv::NestedItConvergenceErrEstimate)(info)
         (conv.is_last_level && err_coarse < 1e-2 * conv.tol)
     conv.ψ_last = info.ψ
     return conv.converged_last
+end
+
+
+# TODO for EA we need to hand down Hψ and Λ aswell, those are unknown otherwise
+mutable struct GreedyCostResidual <: AbstractCostResidual
+    Rres
+    function GreedyCostResidual(ψ_c, Rres)
+        return new(Rres)
+    end
+end
+
+# TODO: Warning: incompatibel with EA!
+# TODO: in principle, energy_hamiltonian is useless here
+function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::GreedyCostResidual)
+    Rres = cgcr.Rres
+    return nothing, nothing, Rres, e_tot
+end
+
+function calculate_cost_residual(H , ψ, e_tot, basis, ::GreedyCostResidual)
+    Nk = size(ψ)[1]
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return Hψ, Λ, res, e_tot
 end

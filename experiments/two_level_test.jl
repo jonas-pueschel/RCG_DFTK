@@ -51,7 +51,7 @@ scfres_rcg0 = RCG_DFTK.two_level_riemannian_optimization(basis_c, basis_f;
     gradient = EAGradient(basis_f, CorrectedRelativeΛShift(μ = 0.0)),
     check_convergence_early = true,
     maxiter = 100,
-    coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1, tol),
+    coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1),
     coarse_cond = RCG_DFTK.ToleranceMinStepCoarseCondition(0.45, tol),
     iteration_strat_fine = StandardBacktracking(
         ArmijoRule(0.1, 0.5),
@@ -70,7 +70,7 @@ scfres_rcg1 = RCG_DFTK.two_level_riemannian_optimization(basis_c, basis_f;
     check_convergence_early = true,
     coarse_density = RCG_DFTK.RecalculateDensity(),
     maxiter = 100,
-    coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1, tol),
+    coarse_tol = RCG_DFTK.RelativeResTolerance(1e-1),
     coarse_cond = RCG_DFTK.ToleranceMinStepCoarseCondition(0.3, tol),
     iteration_strat_fine = StandardBacktracking(
         ArmijoRule(0.1, 0.5),

@@ -70,7 +70,7 @@ for grad_name = ["H1"] # ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
-        coarse_tol_functor = (tol) -> RCG_DFTK.RelativeResTolerance(1e-2),
+        coarse_tol = RCG_DFTK.RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
@@ -83,7 +83,7 @@ for grad_name = ["H1"] # ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
-            coarse_tol_functor = (tol) -> RelativeResTolerance(1e-2),
+            coarse_tol = RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr[[1,3,5,7]]])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)
@@ -95,7 +95,7 @@ for grad_name = ["H1"] # ["EA", "H1"]
         callback = cb,
         coarse_model_tol = 1e-2,
         coarse_cond_tol = 0.45,
-            coarse_tol_functor = (tol) -> RelativeResTolerance(1e-2),
+            coarse_tol = RelativeResTolerance(1e-2),
         gradients = [gradient_functor(basis) for basis = basis_arr[[1,4,7]]])
     println(cb.times_tot[end] / 1e9)
     push!(cbs, cb); push!(ccs_arr, result2ccs(result)); push!(names, name)

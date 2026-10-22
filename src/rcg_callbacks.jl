@@ -85,12 +85,13 @@ end
 
 mutable struct RcgConvergenceErrEstimate
     tolerance
+    norm
     # cache of the last estimate, keyed by the identity of info.ψ, such that
     # a callback and the convergence check do not both invert the metric
     ψ_last
     err_last
 end
-RcgConvergenceErrEstimate(tolerance) = RcgConvergenceErrEstimate(tolerance, nothing, nothing)
+RcgConvergenceErrEstimate(tolerance; norm = :L2) = RcgConvergenceErrEstimate(tolerance, norm, nothing, nothing)
 
 function estimate_error!(conv::RcgConvergenceErrEstimate, info)
     if isnothing(conv.ψ_last) || !(conv.ψ_last === info.ψ)
@@ -102,5 +103,6 @@ end
 
 function (conv::RcgConvergenceErrEstimate)(info)
     err_est = estimate_error!(conv, info)
-    return norm_DFTK(info.basis, err_est) < conv.tolerance
+    nrm(b,v) = conv.norm == :L2 ? norm_DFTK(b, v) : h1_norm_DFTK(b,v)
+    return nrm(info.basis, err_est) < conv.tolerance
 end

@@ -67,7 +67,7 @@ println("\n$name")
 cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 result = multilevel_riemannian_optimization(basis_arr[[1,3]]; ψ = ψ1, ρ = ρ1, tol,
     callback = cb,
-    multilevel_map_functor = (point_restriction) -> RCG_DFTK.AlgebraicMap(point_restriction),
+    multilevel_map = RCG_DFTK.AlgebraicMap(RCG_DFTK.ProjectiveRestriction()),
     coarse_model_tol = 1e-2,
     coarse_cond_tol = 0.45,
     gradients = [H1Gradient(basis) for basis = basis_arr[[1,3]]])
@@ -80,7 +80,7 @@ println("\n$name")
 cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 result = multilevel_riemannian_optimization(basis_arr[[1,3]]; ψ = ψ1, ρ = ρ1, tol,
     callback = cb,
-    multilevel_map_functor = (point_restriction) -> RCG_DFTK.GeometricMap(point_restriction),
+    multilevel_map = RCG_DFTK.GeometricMap(RCG_DFTK.ProjectiveRestriction()),
     coarse_model_tol = 1e-2,
     coarse_cond_tol = 0.45,
     gradients = [H1Gradient(basis) for basis = basis_arr[[1,3]]])
@@ -92,7 +92,7 @@ println("\n$name")
 cb = TrackResTimeCallback(default_callback, init_norm_res, init_e)
 result = multilevel_riemannian_optimization(basis_arr[[1,3]]; ψ = ψ1, ρ = ρ1, tol,
     callback = cb,
-    multilevel_map_functor = (point_restriction) -> RCG_DFTK.ProjectionMap(),
+    multilevel_map = RCG_DFTK.ProjectionMap(),
     coarse_model_tol = 1e-2,
     coarse_cond_tol = 0.45,
     gradients = [H1Gradient(basis) for basis = basis_arr[[1,3]]])

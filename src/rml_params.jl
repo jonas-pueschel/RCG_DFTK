@@ -281,9 +281,18 @@ mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
     ψ_c
     dist
     n_iter
-    function ToleranceMinStepCoarseCondition(η, ϵ; dist = 1)
+    # ϵ = nothing: use the tolerance of the level the condition is used on, see init_coarse_condition!
+    function ToleranceMinStepCoarseCondition(η, ϵ = nothing; dist = 1)
         return new(η, ϵ, nothing, dist, 0)
     end
+end
+
+# Called by two_level_riemannian_optimization on its own (deep) copy of the coarse condition,
+# with the tolerance tol of that level.
+init_coarse_condition!(cc::AbstractCoarseCondition, tol) = cc
+function init_coarse_condition!(cc::ToleranceMinStepCoarseCondition, tol)
+    isnothing(cc.ϵ) && (cc.ϵ = tol)
+    return cc
 end
 
 function EveryKCoarseCorr(k)
@@ -350,11 +359,15 @@ end
 
 abstract type AbstractCoarseTolerance end
 
+# get_coarse_tol(info, coarse_tol) returns the tolerance of the coarse solve. info is the
+# (callback) info of the calling method at the current iterate; it contains in particular the
+# norm of the restricted residual norm_Rres and the tolerance tol of the calling method.
+
+# relative reduction of the restricted residual, but not below the tolerance of the calling method
 struct RelativeResTolerance <: AbstractCoarseTolerance
     μ
-    tol
 end
 
-function get_coarse_tol(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, Rres, res, rrt::RelativeResTolerance) where {T}
-    return max(norm_DFTK(basis_c, Rres) * rrt.μ, rrt.tol)
+function get_coarse_tol(info, rrt::RelativeResTolerance)
+    return max(info.norm_Rres * rrt.μ, info.tol)
 end
