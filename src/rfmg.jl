@@ -18,20 +18,20 @@ DFTK.@timing function riemannian_full_multigrid(
     callback = RfmgDefaultCallback(),
     callback_mid = (info) -> nothing,
     callback_coarse = (info) -> nothing,
-    #TODO: Error estimator
     refinement_tol = 0.45,
-    # norm of the error estimate and refinement decision, see AbstractRefinementCondition
     refinement_cond = EstimateL2Norm(refinement_tol),
+    # multilevel parameters
+    #is_converged_inner = RcgConvergenceResidual, #TODO!
     coarse_cond_tol = 0.45,
     coarse_steps_dist = 1,
-    force_post_smoothing = false,
-    # the tolerance of the condition is the one of the respective level, see init_coarse_condition!
     coarse_cond = ToleranceMinStepCoarseCondition(coarse_cond_tol; dist = coarse_steps_dist),
+    force_post_smoothing = false,
     coarse_density = RecalculateDensity(),
     coarse_model_tol = 1e-2, 
     coarse_cost_residual = CoarseGridCostResidual,
-    # tolerance of the coarse solves inside the multilevel coarse solver
     coarse_tol = RelativeResTolerance(coarse_model_tol),
+    # tolerance of the coarse solves inside the multilevel coarse solver
+    is_converged_outer = RcgConvergenceErrEstimate,
     coarse_model_tol_outer = 1e-2, 
     coarse_tol_outer = RelativeResTolerance(coarse_model_tol_outer),
     cost_residual = StandardCostResiudal(), #TODO what happens with this?
@@ -111,12 +111,8 @@ DFTK.@timing function riemannian_full_multigrid(
         # println(quot)
 
         # error estimation; if possible break, if necessary refine
-        # TODO different error estimators
-
         est_err = invert_refinement_metric_improved(basis_ref, ψ_f, res)
         est_err_coarse = restrict_vector(basis_curr, basis_ref, ψ_c, ψ_f, est_err, ProjectionMap())
-
-        #TODO this is different than inverting the metric on Rres! not clear what is the best choice!
         est_info = (; basis = basis_curr, basis_ref, est_err, est_err_coarse)
         (; err, err_coarse, perc) = estimate_error_norms(refinement_cond, est_info)
         est_err_norm, est_err_perc = err, perc
@@ -137,44 +133,6 @@ DFTK.@timing function riemannian_full_multigrid(
         if refinement_cond(info)
             if depth == length(basis_arr)
                 @warn "cannot refine anymore"
-                # the error estimate of the finest level is computed once per iterate
-                # and shared between the convergence check and the callback
-                # is_converged = RcgConvergenceErrEstimate(tol)
-                # cb_ml = function (info)
-                #     if info.stage == :iterate && !haskey(info, :est_err)
-                #         info = merge(info, (; est_err = estimate_error!(is_converged, info)))
-                #     end
-                #     callback(info)
-                # end
-                # info = multilevel_riemannian_optimization(
-                #     basis_arr;
-                #     ψ = ψ_f,
-                #     ρ = ρ_f,
-                #     tol,
-                #     is_converged,
-                #     maxiter, maxiter_inner,
-                #     callback = cb_ml,
-                #     callback_mid,
-                #     callback_coarse,
-                #     coarse_cond_tol,
-                #     coarse_steps_dist,
-                #     force_post_smoothing,
-                #     coarse_cond,
-                #     coarse_density,
-                #     coarse_model_tol,
-                #     coarse_tol,
-                #     gradients,
-                #     point_restriction,
-                #     multilevel_map,
-                #     retraction,
-                #     check_convergence_early,
-                #     iteration_strats_fine,
-                #     iteration_strats_coarse,
-                #     do_rayleigh_ritz,
-                #     n_iter,
-                # )
-                # # the runtime of the multilevel method does not include the RFMG iterations
-                # return merge(info, (; runtime_ns = time_ns() - start_ns, start_ns))
                 break;
             else
                 #need of refinement
@@ -188,13 +146,23 @@ DFTK.@timing function riemannian_full_multigrid(
                 ψ_c = prolongate_point(basis_prev, basis_curr, ψ_c)
                 ρ_c = DFTK.compute_density(basis_curr, ψ_c , occupation)
 
+                #TODO do one gradient step here?
+
                 fine = evaluate_prolongated(basis_curr, basis_ref, occupation, ψ_c)
                 (; ψ_f, ρ_f, energies, H, res) = fine
                 Rres = restrict_vector(basis_curr, basis_ref, ψ_c, ψ_f, res, ProjectionMap())
                 # info of the new level, e.g. for the coarse tolerance
+                # new error estimate
+                est_err = invert_refinement_metric_improved(basis_ref, ψ_f, res)
+                est_err_coarse = restrict_vector(basis_curr, basis_ref, ψ_c, ψ_f, est_err, ProjectionMap())
+                est_info = (; basis = basis_curr, basis_ref, est_err, est_err_coarse)
+                (; err, err_coarse, perc) = estimate_error_norms(refinement_cond, est_info)
+                est_err_norm, est_err_perc = err, perc
+
                 info = merge(info, (; ham = H, ψ = ψ_c, res, Rres, basis = basis_curr, basis_ref,
                                       norm_res = norm_DFTK(basis_ref, res), norm_Rres = norm_DFTK(basis_curr, Rres),
-                                      ρout = ρ_f, energies, cost = energies.total))
+                                      ρout = ρ_f, energies, cost = energies.total,
+                                      est_err, est_err_coarse, est_err_norm, est_err_perc))
             end
         end
 
@@ -206,7 +174,7 @@ DFTK.@timing function riemannian_full_multigrid(
                 maxiter_inner; 
                 callback = callback_coarse, 
                 coarse_cost_residual, 
-                is_converged = is_converged_inner,
+                is_converged = is_converged_outer,
                 levels)
         else
             ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
@@ -217,7 +185,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     callback = callback_mid,
                     callback_mid,
                     callback_coarse,
-                    is_converged = RcgConvergenceResidual(tol), # TODO what to use here?
+                    is_converged = is_converged_outer(tol), # TODO what to use here?
                     coarse_cond,
                     force_post_smoothing,
                     coarse_density,
@@ -234,6 +202,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     levels,
                     cycle,
                     cycle_finest,
+                    terminate_on_non_descent = true,
                 )
                 return result.ψ, result.ρ
             end

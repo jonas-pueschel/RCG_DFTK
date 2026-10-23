@@ -23,10 +23,11 @@ include("setups/TiO2_setup.jl")
 # Silicon lattice constant in Bohr
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630, 1010]
 #Ecuts = [10, 40, 160, 630]
-model_name = "silicon_supercell"
-setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
+model_name = "silicon"
+setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [2,2,2])
 #setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400]
+#Ecuts = [10,  25,  63, 160,  400]
 model, basis_arr = setup(; Ecut = Ecuts); 
 _, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts); 
 
@@ -80,82 +81,88 @@ cb_rfmg1 = RfmgDefaultCallback(;basis_ref, ψ_ref)
 res_rfmg1 = riemannian_full_multigrid(basis_arr, basis_arr_ref; 
  ψ = ψ_c, ρ = ρ_c, 
  tol, callback = cb_rfmg1,
+ #callback_coarse = RcgDefaultCallback(),
  maxiter = 20,
- maxiter_inner = 2,
- coarse_model_tol_outer = 0.0, 
- refinement_tol = 0.4,
- #coarse_cond = ToleranceMinStepCoarseCondition(0.25),
+ maxiter_inner = 5,
+ #coarse_model_tol_outer = 0.0, 
+ coarse_tol_outer = ReduceErrorRatioTolerance(0.2),
+ refinement_tol = 0.2,
+ #coarse_cond = ToleranceMinStepCoarseCondition(0.1),
  coarse_cond = EstimateErrorCoarseCondition(0.25),
- gradients = [EAGradient(basis) for basis = basis_arr], 
+ gradients = [basis.Ecut < 500 ? H1Gradient(basis) : EAGradient(basis) for basis = basis_arr], 
  #coarse_cost_residual = GreedyCostResidual,
- only_rcg = false,
- force_post_smoothing = false,
- #cycle = VCycle(1,1), cycle_finest = VCycle(1,0),
+ #only_rcg = true,
+ #force_post_smoothing = false,
+ #cycle = VCycle(0,1), cycle_finest = VCycle(1,0),
  basis_distance = 2,
  );
 println(cb_rfmg1.times[end])
 
 
-function strip_levels(levels)
-    lmin = min(levels...)
-    last_was_min = false
-    levels_new = []
-    for l = levels
-        if l == lmin 
-            last_was_min && continue
-            last_was_min = true
-        else
-            last_was_min = false
-        end
-        push!(levels_new, l)
-    end
-    return levels_new
-end
+# function strip_levels(levels)
+#     lmin = min(levels...)
+#     last_was_min = true
+#     levels_new = []
+#     for l = levels
+#         if l == lmin 
+#             last_was_min && continue
+#             last_was_min = true
+#         else
+#             last_was_min = false
+#         end
+#         push!(levels_new, l)
+#     end
+#     return levels_new
+# end
 levels = strip_levels(res_rfmg1.levels)
 plot(1:length(levels), levels, ;yscale = :log10)
 
-# RFMG
-println("\nRFMG")
-cb_rfmg2 = RfmgDefaultCallback(;basis_ref, ψ_ref)
-res_rfmg2 = riemannian_full_multigrid(basis_arr[[2,4,6,8]], basis_arr_ref[[2,4,6,8]]; 
- ψ = ψ_c2, ρ = ρ_c2, tol = 1e-8, callback = cb_rfmg2,
- maxiter = 20,
- maxiter_inner = 3,
- coarse_model_tol_outer = 1e-2, 
- refinement_tol = 0.4,
-  coarse_cond = EstimateErrorCoarseCondition(0.25),
- gradients = [EAGradient(basis) for basis = basis_arr[[2,4,6,8]]], 
- #coarse_cost_residual = GreedyCostResidual,
- only_rcg = false,
- force_post_smoothing = false,
- #cycle = VCycle(0,1), cycle_finest = VCycle(0,1),
- basis_distance = 1)
-println(cb_rfmg2.times[end])
+# # RFMG
+# println("\nRFMG")
+# cb_rfmg2 = RfmgDefaultCallback(;basis_ref, ψ_ref)
+# res_rfmg2 = riemannian_full_multigrid(basis_arr, basis_arr_ref; 
+#  ψ = ψ_c, ρ = ρ_c, 
+#  tol, callback = cb_rfmg2,
+#  #callback_coarse = RcgDefaultCallback(),
+#  maxiter = 20,
+#  maxiter_inner = 10,
+#  #coarse_model_tol_outer = 0.0, 
+#  coarse_tol_outer = ReduceErrorRatioTolerance(0.2),
+#  refinement_tol = 0.4,
+#  #coarse_cond = ToleranceMinStepCoarseCondition(0.1),
+#  coarse_cond = EstimateErrorCoarseCondition(0.25),
+#  gradients = [H1Gradient(basis) for basis = basis_arr], 
+#  #coarse_cost_residual = GreedyCostResidual,
+#  #only_rcg = true,
+#  cycle = VCycle(1,1), cycle_finest = VCycle(1,0),
+#  basis_distance = 1,
+#  );
+# println(cb_rfmg2.times[end])
 
-levels = strip_levels(res_rfmg2.levels)
-plot(1:length(levels), levels, ;yscale = :log10)
+# levels = strip_levels(res_rfmg2.levels)
+# plot(1:length(levels), levels, ;yscale = :log10)
 
 # nested EARCG
-# println("\nnested EARCG")
+println("\nnested EARCG")
 cb_nearcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
 res_nearcg = nested_earcg(basis_arr, basis_arr_ref; 
-    tol = 1e-8, refinement_tol = 0.4, 
+    tol = 1e-8, refinement_tol = 0.2, 
     check_every = 1, ψ = ψ_c, ρ = ρ_c, callback = cb_nearcg);
 println(cb_nearcg.times[end])
 
 # nested H1RCG
-println("\nnested H1RCG")
-cb_nh1rcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
-res_nh1rcg = nested_h1rcg(basis_arr, basis_arr_ref; tol = 1e-8, refinement_tol = 0.4, 
-    check_every = 1, ψ = ψ_c, ρ = ρ_c, callback = cb_nh1rcg);
-println(cb_nh1rcg.times[end])
+# println("\nnested H1RCG")
+# cb_nh1rcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
+# res_nh1rcg = nested_h1rcg(basis_arr, basis_arr_ref; tol = 1e-8, refinement_tol = 0.2, 
+#     check_every = 1, ψ = ψ_c, ρ = ρ_c, callback = cb_nh1rcg);
+# println(cb_nh1rcg.times[end])
 
 # nested SCF
 println("\nnested SCF")
 cb_nscf = RfmgDefaultCallback(;basis_ref, ψ_ref)
-res_nscf = nested_scf(basis_arr[[2,4,6,8]], basis_arr_ref[[2,4,6,8]]; tol = 1e-8, 
-refinement_tol = 0.4, check_every = 1,
-ψ = ψ_c2, ρ = ρ_c2, 
+res_nscf = nested_scf(basis_arr, basis_arr_ref; tol = 1e-8, 
+refinement_tol = 0.2, check_every = 1,
+ψ = ψ_c, ρ = ρ_c, 
 callback = cb_nscf);
 println(cb_nscf.times[end])
 
@@ -182,7 +189,7 @@ println(cb_nscf.times[end])
 # dist vs. time
 plt = plot(; yscale = :log10, xscale = :log, ylabel = "dist", xlabel = "time (s)")
 mkpath("experiments/data")
-for (cb, name) = zip([cb_rfmg2, cb_nearcg, cb_nscf], ["RFMG", "nEARCG", "nSCF"])
+for (cb, name) = zip([cb_rfmg1, cb_nearcg, cb_nscf], ["RFMG", "nEARCG", "nSCF"])
     plot!(plt, cb.times, max.(cb.dists), label = name, marker = :circle, markersize = 2)
     if @isdefined(model_name) && model_name != ""
         open("experiments/data/rfmg_$(model_name)_$(name)_dist_time.dat", "w") do io

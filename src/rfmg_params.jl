@@ -93,6 +93,19 @@ function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBa
     return c1
 end
 
+# coarse tolerance such that the coarse part of the error estimate becomes target_ratio of the
+# whole estimate, assuming the fine part stays unchanged. Coarse and fine part consist of
+# disjoint plane-wave coefficients, hence are orthogonal: err² = err_c² + err_f².
+struct ReduceErrorRatioTolerance <: AbstractCoarseTolerance
+    target_ratio
+end
+
+function get_coarse_tol(info, rert::ReduceErrorRatioTolerance)
+    r = rert.target_ratio
+    err_fine = info.est_err_norm * sqrt(max(1 - info.est_err_perc^2, 0))
+    return r * err_fine / sqrt(1 - r^2)
+end
+
 
 """
     NestedItConvergenceErrEstimate(refinement_cond, tol; check_every = 1)
@@ -202,3 +215,4 @@ function calculate_cost_residual(H , ψ, e_tot, basis, ::GreedyCostResidual)
 
     return Hψ, Λ, res, e_tot
 end
+

@@ -1,5 +1,8 @@
 playground.jl
 
 old/*
+experiments/old/*
+
+*.bson
 
 *.dat

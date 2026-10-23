@@ -59,7 +59,8 @@ export AbstractCoarseDensity,
     RecalculateDensity,
     InterpolateDensity
 export AbstractCoarseTolerance,
-    RelativeResTolerance
+    RelativeResTolerance,
+    ReduceErrorRatioTolerance
 
 # RCG
 export riemannian_conjugate_gradient,
