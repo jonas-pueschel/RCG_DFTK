@@ -42,8 +42,9 @@ end
 Decides, analogously to `is_converged`, whether the error is dominated by the discretization,
 i.e. whether to refine: `refinement_cond(info)` with `info` containing the error estimate
 `est_err` on `basis_ref` and its restriction `est_err_coarse` on `basis`. Subtypes have a
-field `refinement_tol` and define the norm the estimate is measured in via `error_norm`; the
-same norm is used for the convergence check against `tol`.
+field `refinement_tol` and define the norm the estimate is measured in via `error_norm` (or
+via `estimate_error_norms` directly); the same norm is used for the convergence check against
+`tol`.
 """
 abstract type AbstractRefinementCondition end
 
@@ -56,15 +57,55 @@ end
 # refine if the coarse contribution to the error is small compared to the whole error
 (rc::AbstractRefinementCondition)(info) = estimate_error_norms(rc, info).perc < rc.refinement_tol
 
-struct EstimateL2Norm <: AbstractRefinementCondition
-    refinement_tol
-end
-error_norm(::EstimateL2Norm, basis, e) = norm_DFTK(basis, e)
+"""
+    EstimateNorm(refinement_tol; norm = :L2, extrapolate = true)
 
-struct EstimateH1Norm <: AbstractRefinementCondition
+Refinement condition measuring the error estimate in the `norm` `:L2` or `:H1`. The part of
+the estimate outside of `basis` (the shell up to the cutoff of `basis_ref`) estimates the
+discretization error. For `extrapolate = true`, the shell is split into two halves of equal
+width in `|k+G|` with squared contributions `S₀` (inner) and `S₁` (outer). Assuming
+exponential decay of the coefficients in `|k+G|`, the contributions of further shells form a
+geometric series with ratio `S₁/S₀`, so the whole discretization error is extrapolated as
+`S₀ / (1 - S₁/S₀)` (Aitken). Without measurable decay (`S₁ ≥ S₀`), the shell is used as is.
+"""
+struct EstimateNorm <: AbstractRefinementCondition
     refinement_tol
+    norm::Symbol
+    extrapolate::Bool
 end
-error_norm(::EstimateH1Norm, basis, e) = h1_norm_DFTK(basis, e)
+EstimateNorm(refinement_tol; norm = :L2, extrapolate = true) =
+    EstimateNorm(refinement_tol, norm, extrapolate)
+error_norm(rc::EstimateNorm, basis, e) = norm_DFTK(basis, e, rc.norm)
+
+function estimate_error_norms(rc::EstimateNorm, info)
+    err = error_norm(rc, info.basis_ref, info.est_err)
+    err_coarse = error_norm(rc, info.basis, info.est_err_coarse)
+    if rc.extrapolate
+        S₀, S₁ = shell_contributions(info.basis, info.basis_ref, info.est_err, rc.norm)
+        if S₀ > S₁
+            # replace the shell by the extrapolated discretization error
+            err = sqrt(max(err^2 - S₀ - S₁, 0) + S₀ / (1 - S₁ / S₀))
+        end
+    end
+    return (; err, err_coarse, perc = err_coarse / err)
+end
+
+# Squared contributions (as in norm_DFTK(basis_ref, e, norm_type)^2) of the inner and outer half
+# of the shell between the cutoffs of basis and basis_ref, halves of equal width in |k+G|.
+function shell_contributions(basis, basis_ref, e, norm_type)
+    q_c, q_ref = sqrt(2 * basis.Ecut), sqrt(2 * basis_ref.Ecut)
+    q_mid = (q_c + q_ref) / 2
+    n_cols = size(e[1], 2)
+    S₀, S₁ = 0.0, 0.0
+    for (kpt, ek, wk) in zip(basis_ref.kpoints, e, basis_ref.kweights)
+        q = norm.(DFTK.Gplusk_vectors_cart(basis_ref, kpt))
+        w = norm_type == :H1 ? 1 .+ q .^ 2 : ones(length(q))
+        contrib = wk * n_cols * w .* vec(sum(abs2, ek; dims = 2))
+        S₀ += sum(contrib[q_c .< q .≤ q_mid])
+        S₁ += sum(contrib[q .> q_mid])
+    end
+    return S₀, S₁
+end
 
 struct AlwaysRefine <: AbstractRefinementCondition end
 error_norm(::AlwaysRefine, basis, e) = norm_DFTK(basis, e)
@@ -73,7 +114,7 @@ error_norm(::AlwaysRefine, basis, e) = norm_DFTK(basis, e)
 
 mutable struct EstimateErrorCoarseCondition <: AbstractCoarseCondition
     η
-    norm
+    norm::Symbol
     dist
     n_iter 
     function EstimateErrorCoarseCondition(η; norm = :L2, dist = 1)
@@ -87,8 +128,7 @@ function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBa
     end
     est_err = invert_refinement_metric_improved(basis_f, ψ_f, res)
     est_err_coarse = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, est_err, ProjectionMap())
-    nrm(b,v) = cc.norm == :L2 ? norm_DFTK(b, v) : h1_norm_DFTK(b,v)
-    c1 = nrm(basis_c, est_err_coarse) ≥ cc.η * nrm(basis_f, est_err)
+    c1 = norm_DFTK(basis_c, est_err_coarse, cc.norm) ≥ cc.η * norm_DFTK(basis_f, est_err, cc.norm)
     c1 && (cc.n_iter = cc.n_iter + cc.dist + 1)
     return c1
 end

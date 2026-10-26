@@ -3,9 +3,9 @@ using PseudoPotentialData
 include(joinpath(@__DIR__, "setup_utils.jl"))
 
 function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1],
-                     supersampling = 2)
-    # same GTH pseudopotentials as the former hgh/lda/ti-q4 and hgh/lda/o-q6
-    family = PseudoFamily("cp2k.nc.sr.lda.v0_1.largecore.gth")
+                     supersampling = 2, model_terms = :lda)
+    # same GTH pseudopotentials as the former hgh/lda/ti-q4 and hgh/lda/o-q6 (PBE versions for :pbe)
+    family = psp_family("largecore", model_terms)
     Ti = ElementPsp(:Ti, family)
     O = ElementPsp(:O, family)
     atoms = [Ti, Ti, O, O, O, O]
@@ -26,11 +26,11 @@ function TiO2_setup(; Ecut = 50, kgrid = [2, 2, 2], supercell_size = [1, 1, 1],
 
     #model = model_PBE(lattice, atoms, positions)
 
-    model_prim = model_LDA(lattice, atoms, positions)
+    model_prim = setup_model(lattice, atoms, positions; model_terms)
     model = model_prim
     if (prod(supercell_size) != 1)
         lattice, atoms, positions = create_supercell(lattice, atoms, positions, supercell_size)
-        model = model_LDA(lattice, atoms, positions)
+        model = setup_model(lattice, atoms, positions; model_terms)
     end
 
     return setup_bases(model_prim, model, Ecut, kgrid, supercell_size; supersampling)

@@ -1,4 +1,32 @@
 using DFTK
+using PseudoPotentialData
+include(joinpath(@__DIR__, "ecuts.jl"))
+
+"""
+    setup_model(lattice, atoms, positions; model_terms = :lda)
+
+Model with the pseudopotential and, depending on `model_terms`, the nonlinear terms:
+`:lda` (Hartree + LDA XC), `:pbe` (Hartree + PBE XC), `:hartree` (Hartree only), `:xc` (LDA XC
+only) or `:linear` (none, i.e. a linear eigenvalue problem).
+"""
+function setup_model(lattice, atoms, positions; model_terms = :lda)
+    model_terms == :lda && return model_LDA(lattice, atoms, positions)
+    model_terms == :pbe && return model_DFT(lattice, atoms, positions; functionals = PBE())
+    extra_terms = Dict(:linear => [], :hartree => [Hartree()], :xc => [LDA()])
+    haskey(extra_terms, model_terms) || throw(ArgumentError("unknown model_terms $model_terms"))
+    model_atomic(lattice, atoms, positions; extra_terms = extra_terms[model_terms])
+end
+
+"""
+    psp_family(core, model_terms)
+
+GTH pseudopotential family with the given `core` size ("largecore", "semicore", ...),
+generated with PBE for `model_terms = :pbe` and with LDA otherwise.
+"""
+function psp_family(core, model_terms)
+    functional = model_terms == :pbe ? "pbe" : "lda"
+    PseudoFamily("cp2k.nc.sr.$functional.v0_1.$core.gth")
+end
 
 """
     supercell_fft_size(model_prim, Ecut, supercell_size; supersampling = 2)

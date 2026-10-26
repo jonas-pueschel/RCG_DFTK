@@ -103,6 +103,5 @@ end
 
 function (conv::RcgConvergenceErrEstimate)(info)
     err_est = estimate_error!(conv, info)
-    nrm(b,v) = conv.norm == :L2 ? norm_DFTK(b, v) : h1_norm_DFTK(b,v)
-    return nrm(info.basis, err_est) < conv.tolerance
+    return norm_DFTK(info.basis, err_est, conv.norm) < conv.tolerance
 end

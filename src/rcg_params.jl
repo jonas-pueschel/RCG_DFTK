@@ -24,6 +24,13 @@ function h1_norm_DFTK(basis, ξ)
     return sqrt(sum(ξ2 .* basis.kweights) * n_cols)
 end
 
+# norm_DFTK (norm_type = :L2) or h1_norm_DFTK (norm_type = :H1)
+function norm_DFTK(basis, ξ, norm_type::Symbol)
+    norm_type == :L2 && return norm_DFTK(basis, ξ)
+    norm_type == :H1 && return h1_norm_DFTK(basis, ξ)
+    throw(ArgumentError("unknown norm $norm_type"))
+end
+
 # H1 distance of the closest representatives in L2: ‖ψU - φ‖_H1 with the Procrustes rotation
 # U = polar factor of ψ'φ (with the L2 norm, this is grassmann_dist_DFTK)
 function h1_dist_DFTK(basis, ψ, φ)

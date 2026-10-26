@@ -9,6 +9,7 @@ using DelimitedFiles
 include("precompile_methods.jl");
 precompile_methods(["rfmg", "nested_it", "h1rg"]);
 
+include("setups/ecuts.jl")
 include("setups/silicon_setup.jl")
 include("setups/GaAs_setup.jl")
 include("setups/TiO2_setup.jl")
@@ -25,13 +26,17 @@ include("setups/TiO2_setup.jl")
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630, 1010]
 #Ecuts = [10, 40, 160, 630]
 model_name = "silicon"
-setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
+setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], model_terms = :lda, supersampling = 2)
 #setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 #setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630]
 #Ecuts = [10, 25, 63,  160, 400, 500]
 
-Ecuts = [10,16,25,40, 63, 101, 160, 250, 400, 630]
+Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :factor, factor = 1.7)
+get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
+
+Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
+get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
 #TiO2
 #Ecuts = [40, 63, 101, 160, 250, 400, 500]
 
@@ -42,8 +47,8 @@ _, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts);
 
 basis_c = basis_arr[1]
 # Initial value
-scfres_start = self_consistent_field(basis_c; tol = 1e-2);
-#scfres_start = h1_riemannian_gradient(basis_c; tol = 1e-4);
+#scfres_start = self_consistent_field(basis_c; tol = 1e-2);
+scfres_start = h1_riemannian_gradient(basis_c; tol = 1e-4);
 ψ_c = DFTK.select_occupied_orbitals(basis_c, scfres_start.ψ, scfres_start.occupation).ψ;
 ρ_c = scfres_start.ρ
 
@@ -70,66 +75,27 @@ scfres_ref = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  gradients = [EAGradient(basis) for basis = basis_arr], 
  basis_distance = 2,
 );
+println("Calculated reference solution in $(scfres_ref.runtime_ns/1e9) seconds")
+# scfres_ref = energy_adaptive_riemannian_conjugate_gradient(scfres_ref.basis; 
+#     ρ = scfres_ref.ρ, ψ = scfres_ref.ψ, tol = 1e-11)
 ψ_ref = scfres_ref.ψ
+res_ref = scfres_ref.res
+
 
 basis_ref = basis_arr[end]
-basis_arr = basis_arr[1:end-1]
-basis_arr_ref = basis_arr_ref[1:end-1]
 
 
-# ψ_c2 = RCG_DFTK.prolongate_point(basis_arr[1], basis_arr[2], ψ_c)
-# # check that there are no virtual orbitals
-# model = basis_arr[2].model
-# filled_occ = DFTK.filled_occupation(model)
-# n_spin = model.n_spin_components
-# n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
-# # number of kpoints and occupation
-# Nk = length(basis_arr[2].kpoints)
+Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :factor, factor = 10^(0.2))
+get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
-# occupation = [filled_occ * ones(Float64, n_bands) for ik in 1:Nk]
+# Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
+# get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
 
-# ρ_c2 = DFTK.compute_density(basis_arr[2], ψ_c2 , occupation)
-#RFMG
-# println("\nH1RFMG")
-# cb_rfmg1 = RfmgDefaultCallback(;basis_ref, ψ_ref)
-# res_rfmg1 = riemannian_full_multigrid(basis_arr, basis_arr_ref; 
-#  ψ = ψ_c, ρ = ρ_c, 
-#  tol, callback = cb_rfmg1,
-#  #callback_coarse = RcgDefaultCallback(),
-#  maxiter = 20,
-#  maxiter_inner = 15,
-#  #coarse_model_tol_outer = 0.0, 
-#  coarse_tol_outer = ReduceErrorRatioTolerance(0.2),
-#  refinement_tol = 0.2,
-#  #coarse_cond = ToleranceMinStepCoarseCondition(0.1),
-#  coarse_cond = EstimateErrorCoarseCondition(0.25),
-#  gradients = [H1Gradient(basis) for basis = basis_arr], 
-#  #coarse_cost_residual = GreedyCostResidual,
-#  #only_rcg = true,
-#  #force_post_smoothing = false,
-#  #cycle = VCycle(1,1), cycle_finest = VCycle(1,0),
-#  basis_distance = 2,
-#  );
-# println(cb_rfmg1.times[end])
-
-
-# function strip_levels(levels)
-#     lmin = min(levels...)
-#     last_was_min = true
-#     levels_new = []
-#     for l = levels
-#         if l == lmin 
-#             last_was_min && continue
-#             last_was_min = true
-#         else
-#             last_was_min = false
-#         end
-#         push!(levels_new, l)
-#     end
-#     return levels_new
-# end
-# levels = strip_levels(res_rfmg1.levels)
-# plot(1:length(levels), levels, ;yscale = :log10)
+model, basis_arr = setup(; Ecut = Ecuts); 
+_, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts); 
+scfres_start = h1_riemannian_gradient(basis_arr[1]; tol = 1e-4 ,callback = (info -> nothing));
+ψ_c = DFTK.select_occupied_orbitals(basis_arr[1], scfres_start.ψ, scfres_start.occupation).ψ;
+ρ_c = scfres_start.ρ;
 
 println("\nEARFMG")
 cb_rfmg2 = RfmgDefaultCallback(;basis_ref, ψ_ref)
@@ -148,11 +114,14 @@ res_rfmg2 = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  #coarse_cost_residual = GreedyCostResidual,
  #only_rcg = true,
  #force_post_smoothing = false,
- basis_distance = 2,
+ basis_distance = 1,
  );
 println(cb_rfmg2.times[end])
-levels = strip_levels(res_rfmg2.levels)
-plot(1:length(levels), levels, ;yscale = :log10)
+
+plot(1:length(cb_rfmg2.dists), cb_rfmg2.dists; yscale = :log10)
+
+# levels = strip_levels(res_rfmg2.levels)
+# plot(1:length(levels), levels, ;yscale = :log10)
 
 # nested EARCG
 println("\nnested EARCG")
@@ -201,7 +170,7 @@ end
 
 function naive_method(method)
     is_converged = NestedItConvergenceErrEstimate(
-        EstimateL2Norm(0.2), tol)
+        EstimateNorm(0.2), tol)
     cb = (; times = [], dists = [], Ecuts = [])
     for (basis_int, basis_int_ref) = zip(basis_arr, basis_arr_ref)
         ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_int, ψ_c)

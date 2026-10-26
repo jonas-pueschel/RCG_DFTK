@@ -1,6 +1,6 @@
 """
     nested_iteration(method, basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
-                     refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+                     refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                      ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
                      callback_inner = info -> nothing)
 
@@ -9,7 +9,7 @@ Solve successively on the bases in `basis_arr` (ordered from coarse to fine). On
 `NestedItConvergenceErrEstimate` using the reference basis `basis_arr_ref[l]`: as in RFMG,
 a level is left once `refinement_cond` decides that the coarse contribution to the estimated
 error is small compared to the whole error (by default below `refinement_tol` times the whole
-error in the L2 norm, see `AbstractRefinementCondition`; checked in every `check_every`-th
+error in the L2 norm, see `EstimateNorm`; checked in every `check_every`-th
 iteration). The resulting `ψ` is prolongated onto the next basis and, together with its
 density, used as initial guess there. The whole algorithm terminates once the estimated error is below `tol`,
 or on the last level once refinement would be necessary or the coarse contribution to the
@@ -24,7 +24,7 @@ The optional initial guesses `ρ` and `ψ` live in the coarsest basis `basis_arr
 """
 function nested_iteration(method, basis_arr::Vector, basis_arr_ref::Vector;
                           tol = 1e-6, refinement_tol = 0.45,
-                          refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+                          refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
                           callback_inner = info -> nothing)
     @assert length(basis_arr) == length(basis_arr_ref)
@@ -75,7 +75,7 @@ end
 
 """
     nested_earcg(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
-          refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+          refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
           callback_inner = info -> nothing, kwargs...)
 
@@ -84,7 +84,7 @@ Additional `kwargs` are passed to the solver.
 """
 function nested_earcg(basis_arr::Vector, basis_arr_ref::Vector;
                       tol = 1e-6, refinement_tol = 0.45,
-                      refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+                      refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                       callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
                       ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = energy_adaptive_riemannian_conjugate_gradient(basis; kwargs..., kw...)
@@ -94,7 +94,7 @@ end
 
 """
     nested_h1rcg(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
-          refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+          refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
           callback_inner = info -> nothing, kwargs...)
 
@@ -103,7 +103,7 @@ Additional `kwargs` are passed to the solver.
 """
 function nested_h1rcg(basis_arr::Vector, basis_arr_ref::Vector;
                       tol = 1e-6, refinement_tol = 0.45,
-                      refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+                      refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                       callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
                       ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = h1_riemannian_conjugate_gradient(basis; kwargs..., kw...)
@@ -113,7 +113,7 @@ end
 
 """
     nested_scf(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
-          refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+          refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
           callback_inner = info -> nothing, kwargs...)
 
@@ -123,7 +123,7 @@ occupations of the RCG methods instead of DFTK's default (see `FillLowestBands`)
 """
 function nested_scf(basis_arr::Vector, basis_arr_ref::Vector;
                     tol = 1e-6, refinement_tol = 0.45,
-                    refinement_cond = EstimateL2Norm(refinement_tol), check_every = 1,
+                    refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                     callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
                     ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = self_consistent_field(basis; kwargs..., kw...)

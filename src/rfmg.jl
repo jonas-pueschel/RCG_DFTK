@@ -19,7 +19,7 @@ DFTK.@timing function riemannian_full_multigrid(
     callback_mid = (info) -> nothing,
     callback_coarse = (info) -> nothing,
     refinement_tol = 0.45,
-    refinement_cond = EstimateL2Norm(refinement_tol),
+    refinement_cond = EstimateNorm(refinement_tol),
     # multilevel parameters
     #is_converged_inner = RcgConvergenceResidual, #TODO!
     coarse_cond_tol = 0.45,

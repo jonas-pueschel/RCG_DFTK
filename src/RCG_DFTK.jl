@@ -35,8 +35,7 @@ export two_level_riemannian_optimization,
     FillLowestBands,
     NestedItConvergenceErrEstimate,
     AbstractRefinementCondition,
-    EstimateL2Norm,
-    EstimateH1Norm
+    EstimateNorm
 export AbstractVectorMultilevelMap,
     ProjectionMap,
     PseudoInverse_1_2_Map,
