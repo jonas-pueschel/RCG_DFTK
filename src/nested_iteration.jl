@@ -2,7 +2,7 @@
     nested_iteration(method, basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
                      refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                      ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
-                     callback_inner = info -> nothing)
+                     callback_inner = info -> nothing, is_converged_inner = nothing)
 
 Solve successively on the bases in `basis_arr` (ordered from coarse to fine). On level `l`,
 `method(basis_arr[l]; ρ, ψ, is_converged, callback)` is called, where `is_converged` is a
@@ -21,12 +21,18 @@ so far; e.g. for `RfmgDefaultCallback`, one line per Ecut), and once more at the
 `stage = :finalize` and `converged` the convergence of the whole nested iteration.
 `callback_inner` is passed on to `method`, with `n_iter` counted across all levels.
 The optional initial guesses `ρ` and `ψ` live in the coarsest basis `basis_arr[1]`.
+
+If `is_converged_inner` is given (e.g. `ScfConvergenceDensity(1e-8)`), it replaces the error
+estimate: every level is solved until `is_converged_inner` (a fresh copy on every level) is
+satisfied or the method stops otherwise, and then refined; the nested iteration returns after
+the last level, converged if the method converged there. `tol`, `refinement_cond` and
+`check_every` are not used then, and `basis_arr_ref` only for the infos.
 """
 function nested_iteration(method, basis_arr::Vector, basis_arr_ref::Vector;
                           tol = 1e-6, refinement_tol = 0.45,
                           refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
-                          callback_inner = info -> nothing)
+                          callback_inner = info -> nothing, is_converged_inner = nothing)
     @assert length(basis_arr) == length(basis_arr_ref)
     for l = 1:(length(basis_arr) - 1)
         @assert basis_arr[l].Ecut < basis_arr[l + 1].Ecut
@@ -36,6 +42,7 @@ function nested_iteration(method, basis_arr::Vector, basis_arr_ref::Vector;
     is_converged = NestedItConvergenceErrEstimate(refinement_cond, tol; check_every)
     info = nothing
     n_iter_prev = 0  # iterations performed on the previous levels
+    levels = Float64[]  # levels of all Ecuts so far (the method only returns those of its own run)
     for (l, (basis, basis_ref)) in enumerate(zip(basis_arr, basis_arr_ref))
         if l > 1
             # extrapolate the previous solution onto the current basis
@@ -43,20 +50,32 @@ function nested_iteration(method, basis_arr::Vector, basis_arr_ref::Vector;
             ρ = DFTK.compute_density(basis, ψ, info.occupation)
         end
         is_last_level = l == length(basis_arr)
-        reset!(is_converged, basis_ref, is_last_level)
+        # the convergence check of the inner method may carry state, hence a fresh copy per level
+        is_converged_level = isnothing(is_converged_inner) ? reset!(is_converged, basis_ref, is_last_level) :
+                             deepcopy(is_converged_inner)
 
         # only pass initial guesses if available, s.t. the method's defaults are used otherwise
         guess = (; (isnothing(ρ) ? (;) : (; ρ))..., (isnothing(ψ) ? (;) : (; ψ))...)
         # continue the iteration count of the previous levels
         callback_level = info_inner -> callback_inner(merge(info_inner, (; n_iter = info_inner.n_iter + n_iter_prev)))
-        info = method(basis; guess..., is_converged, callback = callback_level)
+        info = method(basis; guess..., is_converged = is_converged_level, callback = callback_level)
 
         # converged: the final convergence goal was met; the level infos carry the convergence
         # of the level, the returned info the one of the whole method
-        (; final_converged, refine, est_err, est_err_norm, est_err_perc) = is_converged
-        is_last_level && refine && !final_converged && @warn "cannot refine anymore"
+        if isnothing(is_converged_inner)
+            (; final_converged, refine, est_err, est_err_norm, est_err_perc) = is_converged
+            is_last_level && refine && !final_converged && @warn "cannot refine anymore"
+        else
+            # every level is solved to convergence, only the last one decides
+            final_converged = is_last_level && info.converged
+            est_err = est_err_norm = est_err_perc = nothing
+        end
         done = final_converged || is_last_level
         n_iter_prev += info.n_iter
+        if haskey(info, :levels)
+            append!(levels, info.levels)
+            info = merge(info, (; levels))
+        end
         info = merge(info, (; n_iter = n_iter_prev, level = l, n_levels = length(basis_arr), basis_ref,
                               converged = done ? final_converged : info.converged, final_converged,
                               est_err, est_err_norm, est_err_perc, runtime_nested_ns = time_ns() - start_ns))
@@ -77,7 +96,7 @@ end
     nested_earcg(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
           refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
-          callback_inner = info -> nothing, kwargs...)
+          callback_inner = info -> nothing, is_converged_inner = nothing, kwargs...)
 
 Nested iteration with `energy_adaptive_riemannian_conjugate_gradient` on each level.
 Additional `kwargs` are passed to the solver.
@@ -86,17 +105,17 @@ function nested_earcg(basis_arr::Vector, basis_arr_ref::Vector;
                       tol = 1e-6, refinement_tol = 0.45,
                       refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                       callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
-                      ρ = nothing, ψ = nothing, kwargs...)
+                      is_converged_inner = nothing, ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = energy_adaptive_riemannian_conjugate_gradient(basis; kwargs..., kw...)
     nested_iteration(method, basis_arr, basis_arr_ref; tol, refinement_cond, check_every, ρ, ψ,
-                     callback, callback_inner)
+                     callback, callback_inner, is_converged_inner)
 end
 
 """
     nested_h1rcg(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
           refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
-          callback_inner = info -> nothing, kwargs...)
+          callback_inner = info -> nothing, is_converged_inner = nothing, kwargs...)
 
 Nested iteration with `h1_riemannian_conjugate_gradient` on each level.
 Additional `kwargs` are passed to the solver.
@@ -105,17 +124,17 @@ function nested_h1rcg(basis_arr::Vector, basis_arr_ref::Vector;
                       tol = 1e-6, refinement_tol = 0.45,
                       refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                       callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
-                      ρ = nothing, ψ = nothing, kwargs...)
+                      is_converged_inner = nothing, ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = h1_riemannian_conjugate_gradient(basis; kwargs..., kw...)
     nested_iteration(method, basis_arr, basis_arr_ref; tol, refinement_cond, check_every, ρ, ψ,
-                     callback, callback_inner)
+                     callback, callback_inner, is_converged_inner)
 end
 
 """
     nested_scf(basis_arr, basis_arr_ref; tol = 1e-6, refinement_tol = 0.45,
           refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
           ρ = nothing, ψ = nothing, callback = RfmgDefaultCallback(),
-          callback_inner = info -> nothing, kwargs...)
+          callback_inner = info -> nothing, is_converged_inner = nothing, kwargs...)
 
 Nested iteration with DFTK's `self_consistent_field` on each level.
 Additional `kwargs` are passed to the solver, e.g. `fermialg = FillLowestBands()` to use the
@@ -125,10 +144,10 @@ function nested_scf(basis_arr::Vector, basis_arr_ref::Vector;
                     tol = 1e-6, refinement_tol = 0.45,
                     refinement_cond = EstimateNorm(refinement_tol), check_every = 1,
                     callback = RfmgDefaultCallback(), callback_inner = info -> nothing,
-                    ρ = nothing, ψ = nothing, kwargs...)
+                    is_converged_inner = nothing, ρ = nothing, ψ = nothing, kwargs...)
     method(basis; kw...) = self_consistent_field(basis; kwargs..., kw...)
     nested_iteration(method, basis_arr, basis_arr_ref; tol, refinement_cond, check_every, ρ, ψ,
-                     callback, callback_inner)
+                     callback, callback_inner, is_converged_inner)
 end
 
 """

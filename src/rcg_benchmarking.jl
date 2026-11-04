@@ -248,6 +248,27 @@ function init_E_res(ψ, ρ, basis)
     return energies, res
 end
 
+function compute_all(basis, ψ; ρ = nothing)
+    model = basis.model
+    filled_occ = DFTK.filled_occupation(model)
+    n_spin = model.n_spin_components
+    n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    Nk = length(basis.kpoints)
+    occupation = [filled_occ * ones(Float64, n_bands) for _ in 1:Nk]
+    if isnothing(ρ)
+        ρ = DFTK.compute_density(basis, ψ, occupation)
+    end
+
+    energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
+
+    Hψ = H * ψ
+    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
+    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
+    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
+
+    return (; ρ, res, Λ, energies, H, Hψ)
+end
+
 function plot_callbacks(callbacks, names, ψ1, ρ1,basis)
 
     es0, res0 = init_E_res(ψ, ρ, basis)

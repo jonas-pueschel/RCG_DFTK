@@ -16,6 +16,7 @@ DFTK.@timing function riemannian_full_multigrid(
     basis_arr::Vector, basis_arr_ref::Vector; ψ = nothing, ρ = nothing,
     tol = 1.0e-6, maxiter = 100, maxiter_inner = 100,
     callback = RfmgDefaultCallback(),
+    callback_outer = (info) -> nothing,
     callback_mid = (info) -> nothing,
     callback_coarse = (info) -> nothing,
     refinement_tol = 0.45,
@@ -121,7 +122,7 @@ DFTK.@timing function riemannian_full_multigrid(
         # only discretization error, which cannot be reduced further; not reported as converged
         stagnated = !converged && depth == length(basis_arr) && err_coarse < tol * 1e-2
         info = (;
-            ham = H, ψ = ψ_c, res, Rres, basis = basis_curr, basis_ref, converged, stage = :iterate, norm_res = norm_DFTK(basis_ref, res), norm_Rres = norm_DFTK(basis_curr, Rres), ρin = ρ_prev, ρout = ρ_f, n_iter,
+            ham = H, ψ = ψ_c, res, Rres, basis = basis_curr, basis_ref, converged, stage = :iterate, norm_res = norm_DFTK(basis_ref, res), norm_Rres = norm_DFTK(basis_curr, Rres), ρin = ρ_prev, ρout = ρ_c, n_iter,
             energies, cost = energies.total, est_err, est_err_coarse, est_err_norm, est_err_perc, τ, tol, start_ns, algorithm = "RFMG", levels,
         )
         callback(info)
@@ -161,7 +162,7 @@ DFTK.@timing function riemannian_full_multigrid(
 
                 info = merge(info, (; ham = H, ψ = ψ_c, res, Rres, basis = basis_curr, basis_ref,
                                       norm_res = norm_DFTK(basis_ref, res), norm_Rres = norm_DFTK(basis_curr, Rres),
-                                      ρout = ρ_f, energies, cost = energies.total,
+                                      ρout = ρ_c, energies, cost = energies.total,
                                       est_err, est_err_coarse, est_err_norm, est_err_perc))
             end
         end
@@ -172,7 +173,7 @@ DFTK.@timing function riemannian_full_multigrid(
             ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[depth], 
                 gradients[depth], 
                 maxiter_inner; 
-                callback = callback_coarse, 
+                callback = callback_outer, 
                 coarse_cost_residual, 
                 is_converged = is_converged_outer,
                 levels)
@@ -182,7 +183,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     tol,
                     maxiter = maxiter_inner,
                     maxiter_inner,
-                    callback = callback_mid,
+                    callback = callback_outer,
                     callback_mid,
                     callback_coarse,
                     is_converged = is_converged_outer(tol), # TODO what to use here?
@@ -227,8 +228,8 @@ DFTK.@timing function riemannian_full_multigrid(
         # the coarse density is only used as initial guess of the coarse solver
         ψ_c = next.ψ_c_next
         τ = next.τ
+        ρ_prev = ρ_c
         ρ_c = next.τ == 1 ? ρ_c_sol : DFTK.compute_density(basis_curr, ψ_c, occupation)
-        ρ_prev = ρ_f
         # the fine residual at the next point is already known from the line search
         fine = (; ψ_f = next.ψ_next, ρ_f = next.ρ_next, energies = next.energies_next, cost = next.cost_next,
                   H = next.H_next, Hψ = next.Hψ_next, Λ = next.Λ_next, res = next.res_next)
@@ -258,7 +259,7 @@ DFTK.@timing function riemannian_full_multigrid(
 
     info = (;
         ham = H, ψ = ψ_c, res, Rres, basis = basis_curr, basis_ref, energies, cost= energies.total, converged, norm_res = norm_DFTK(basis_ref, res), norm_Rres = norm_DFTK(basis_curr, Rres), 
-        ρ = ρ_f, eigenvalues, occupation, εF, n_iter,
+        ρ = ρ_c, eigenvalues, occupation, εF, n_iter,
         stage = :finalize, runtime_ns = time_ns() - start_ns, start_ns, est_err, est_err_coarse, est_err_norm, est_err_perc, tol, algorithm = "RFMG", levels,
     )
 

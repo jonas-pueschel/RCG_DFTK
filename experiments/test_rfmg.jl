@@ -4,6 +4,9 @@ using PseudoPotentialData
 using Plots
 using DelimitedFiles
 
+#otherwise svgs are huge!
+gr(fmt = :png)
+
 # run each method used below once, such that the timings do not contain compilation time
 # (h1rg: initial value; rfmg: reference and RFMG runs; nested_it: nested EARCG, H1RCG and SCF)
 include("precompile_methods.jl");
@@ -26,17 +29,17 @@ include("setups/TiO2_setup.jl")
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630, 1010]
 #Ecuts = [10, 40, 160, 630]
 model_name = "silicon"
-setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], model_terms = :lda, supersampling = 2)
+setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], model_terms = :hartree, supersampling = 2)
 #setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 #setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
 #Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630]
 #Ecuts = [10, 25, 63,  160, 400, 500]
 
-Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :factor, factor = 1.7)
-get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
+Ecuts = get_Ecuts(600; Ecut_min = 9, mode = :factor, factor = 1.7)
+Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
-Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
-get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
+# Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
+# Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
 #TiO2
 #Ecuts = [40, 63, 101, 160, 250, 400, 500]
 
@@ -86,13 +89,13 @@ basis_ref = basis_arr[end]
 
 
 Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :factor, factor = 10^(0.2))
-get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
+Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 # Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
 # get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
 
 model, basis_arr = setup(; Ecut = Ecuts); 
-_, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts); 
+_, basis_arr_ref = setup(; Ecut = Ecuts_ref); 
 scfres_start = h1_riemannian_gradient(basis_arr[1]; tol = 1e-4 ,callback = (info -> nothing));
 ψ_c = DFTK.select_occupied_orbitals(basis_arr[1], scfres_start.ψ, scfres_start.occupation).ψ;
 ρ_c = scfres_start.ρ;

@@ -34,13 +34,18 @@ end
 # H1 distance of the closest representatives in L2: ‖ψU - φ‖_H1 with the Procrustes rotation
 # U = polar factor of ψ'φ (with the L2 norm, this is grassmann_dist_DFTK)
 function h1_dist_DFTK(basis, ψ, φ)
+    diff = grassmann_diff_DFTK(ψ, φ)
+    return h1_norm_DFTK(basis, diff)
+end
+
+function grassmann_diff_DFTK(ψ, φ)
     length(ψ) == length(φ) || throw(DimensionMismatch("X and Y must have equal length"))
     diff = map(ψ, φ) do ψk, φk
         size(ψk) == size(φk) || throw(DimensionMismatch("size mismatch"))
         F = svd(ψk' * φk)
         ψk * (F.U * F.Vt) - φk
     end
-    return h1_norm_DFTK(basis, diff)
+    return diff
 end
 
 function grassmann_dist_DFTK(basis, ψ, φ)
@@ -163,7 +168,7 @@ function EAGradient(basis::PlaneWaveBasis{T}, shift; itmax = 100, tol = 1.0e-2, 
 end
 
 function EAGradient(basis::PlaneWaveBasis{T}; shift = CorrectedRelativeΛShift(μ = 0.0), itmax = 100, tol = 1.0e-2, h_solver = GlobalOptimalHSolver(), Pks = nothing, naive_formula = false) where {T}
-    return EAGradient(basis, shift)
+    return EAGradient(basis, shift; itmax, tol, h_solver, Pks, naive_formula)
 end
 
 struct ConstantShift <: AbstractShiftStrategy

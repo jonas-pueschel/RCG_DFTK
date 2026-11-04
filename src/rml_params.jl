@@ -337,6 +337,19 @@ abstract type AbstractCoarseDensity end
 
 struct RecalculateDensity <: AbstractCoarseDensity end
 
+function compute_density(basis, ψ)
+    model = basis.model
+    filled_occ = DFTK.filled_occupation(model)
+    n_spin = model.n_spin_components
+    n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    # number of kpoints and occupation
+    Nk = length(basis.kpoints)
+
+    occupation = [filled_occ * ones(eltype(basis), n_bands) for ik in 1:Nk]
+   
+    return DFTK.compute_density(basis, ψ , occupation)
+end
+
 function calculate_coarse_density(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ρ_f, ψ_c, ψ_f, ::RecalculateDensity) where {T}
     # check that there are no virtual orbitals
     model = basis_c.model

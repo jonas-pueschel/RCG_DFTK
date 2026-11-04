@@ -135,5 +135,6 @@ export RcgDefaultCallback,
     RcgConvergenceResidual,
     RfmgDefaultCallback
 export AlgebraicMap
+export compute_all
 
 end # module RCG_DFTK
