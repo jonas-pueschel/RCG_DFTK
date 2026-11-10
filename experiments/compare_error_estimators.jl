@@ -109,7 +109,7 @@ for (Ecut, Ecut_ref, tol) = zip(Ecuts, Ecuts_ref, tols)
             EAGrad_err = RCG_DFTK.calculate_gradient(ψ_f, Hψ, H, Λ, res, EAGradient(basis_f; tol = 1e-4))
         end
         SchurHess_time = @elapsed begin
-            SchurHess_err = DFTK.refine_scfres(earcg_result, basis_f; tol = 1e-4).δψ
+            SchurHess_err = DFTK.refine_scfres(earcg_result, basis_f; tol = tol * 1e-3).δψ
         end
 
         for (est, est_err, est_time) in zip(estimator_names, [Minv_err, EAGrad_err, SchurHess_err],
