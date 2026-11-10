@@ -7,3 +7,5 @@ experiments/old/*
 
 *.dat
 *.png
+
+*.BSON

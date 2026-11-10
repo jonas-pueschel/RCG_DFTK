@@ -3,24 +3,12 @@ using RCG_DFTK
 using PseudoPotentialData
 using Plots
 using DelimitedFiles
-using BSON
 
-include("setups/ecuts.jl")
-include("setups/silicon_setup.jl")
-include("setups/GaAs_setup.jl")
-include("setups/TiO2_setup.jl")
-
+include("setups/multigrid_setup.jl")
 include("./plotting_scripts/plot_iterates.jl")
 
-model_name = "TiO2"
-setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], 
-    model_terms = :pbe)
-
-BSON.@load "experiments/reference_solutions/$(model_name)_ref.BSON" ψ_ref ρ_ref Ecut_ref
-_, basis_ref = setup(; Ecut = Ecut_ref)
-
-Ecuts = [50.0, 84.0, 127.3, 179.2, 240.0, 600]
-Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
+model_name = "TiO2"  # "TiO2", "GaAs" or "silicon"
+(; Ecuts, Ecuts_ref, basis_arr, basis_arr_ref, ψ_ref, basis_ref) = multigrid_setup(model_name)
 tols = 3 * [6e-2, 2e-2, 3e-3, 1e-3, 2e-4, 3e-5]
 
 # results go to experiments/data/<run_name>/, distribution plots to experiments/imgs/<run_name>/
@@ -62,10 +50,9 @@ function split_error(basis, basis_ref, error; extrapolate = false)
     return err_fine, err_coarse
 end
 
-for (Ecut, Ecut_ref, tol) = zip(Ecuts, Ecuts_ref, tols)
+for (basis, basis_sref, tol) = zip(basis_arr, basis_arr_ref, tols)
+    Ecut, Ecut_sref = basis.Ecut, basis_sref.Ecut
     println("\n\nEcut = $Ecut \n")
-    _, basis = setup(; Ecut)
-    _, basis_sref = setup(; Ecut = Ecut_ref)
     if !isnothing(ψ_iter)
         ψ0 = RCG_DFTK.interpolate_c2f(basis_prev, basis, ψ_iter)
         ρ0 = RCG_DFTK.compute_density(basis, ψ0)
@@ -88,7 +75,7 @@ for (Ecut, Ecut_ref, tol) = zip(Ecuts, Ecuts_ref, tols)
     err_fine_norm = sqrt(err_norm^2 - err_coarse_norm^2)
     println("fine: $err_fine_norm; coarse: $err_coarse_norm")
 
-    row = [Ecut, Ecut_ref, err_fine_norm, err_coarse_norm]
+    row = [Ecut, Ecut_sref, err_fine_norm, err_coarse_norm]
     plot_name(what) = "$run_name/$(model_name)-Ecut$(round(Int, Ecut))-$what"
     plot_diff(RCG_DFTK.grassmann_diff_DFTK(ψ_fine, ψ_ref), basis_ref, Ecuts; name = plot_name("exact"))
 
