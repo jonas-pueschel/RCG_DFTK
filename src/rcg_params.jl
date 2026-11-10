@@ -64,17 +64,24 @@ end
 
 abstract type AbstractCostResidual end
 
-struct StandardCostResiudal <: AbstractCostResidual end
-
-function initialize_cost_residual(H , ψ, e_tot, basis, cgcr::StandardCostResiudal)
+# Hψ, the symmetrized Λ = ψ'Hψ and the residual Hψ - ψΛ
+function compute_residual(H, ψ)
     Nk = size(ψ)[1]
     Hψ = H * ψ
     Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
     Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
     res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
-
-    return Hψ, Λ, res, e_tot
+    return Hψ, Λ, res
 end
+
+# initialize_cost_residual(Hψ, Λ, res, e_tot, basis, cr) starts the cost residual cr from the
+# already known standard residual (see compute_residual), e.g. computed by a coarse condition
+initialize_cost_residual(H, ψ, e_tot, basis, cr::AbstractCostResidual) =
+    initialize_cost_residual(compute_residual(H, ψ)..., e_tot, basis, cr)
+
+struct StandardCostResiudal <: AbstractCostResidual end
+
+initialize_cost_residual(Hψ, Λ, res, e_tot, basis, ::StandardCostResiudal) = (Hψ, Λ, res, e_tot)
 
 function calculate_cost_residual(H , ψ, e_tot, basis, ::StandardCostResiudal)
     Nk = size(ψ)[1]

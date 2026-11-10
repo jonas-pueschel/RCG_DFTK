@@ -16,6 +16,9 @@ DFTK.@timing function riemannian_conjugate_gradient(
         iteration_strat = GreedySecantStrategy(ConstantStep(1.0), 0.1),
         do_rayleigh_ritz = true,
         levels = Float64[],  # Ecut of the basis of every gradient calculation (shared across levels)
+        # (; energies, H, Hψ, Λ, res) already evaluated at (ψ, ρ), with the standard residual
+        # res (see compute_residual), e.g. by a coarse condition; nothing: evaluate here
+        initial_eval = nothing,
     ) where {T}
     #println("Ecut: $(basis.Ecut) solve RCG")
 
@@ -52,10 +55,15 @@ DFTK.@timing function riemannian_conjugate_gradient(
 
     # orbitals, densities and energies to be updated along the iterations
 
-    energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
-
-    # compute first residual
-    Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_residual)
+    if isnothing(initial_eval)
+        energies, H = energy_hamiltonian(basis, ψ, occupation; ρ)
+        # compute first residual
+        Hψ, Λ, res, cost = initialize_cost_residual(H, ψ, energies.total, basis, cost_residual)
+    else
+        (; energies, H) = initial_eval
+        Hψ, Λ, res, cost = initialize_cost_residual(initial_eval.Hψ, initial_eval.Λ, initial_eval.res,
+                                                    energies.total, basis, cost_residual)
+    end
 
     # calculate gradient
     grad = calculate_gradient(ψ, Hψ, H, Λ, res, gradient)

@@ -80,11 +80,9 @@ function smart_scatter(as, es; Ecuts = nothing, nx = 400, dy = 0.04, per_cell = 
     return (sc, es[keep], xs[keep], as[keep])
 end
 
-function plot_energy_distribution(ψ, basis, Ecuts; ylims = (1e-13,2))
-    as, es = calculate_energy_distribution(ψ, basis)
-
-
-end
+# function plot_energy_distribution(ψ, basis, Ecuts)
+#     as, es = calculate_energy_distribution(ψ, basis)
+# end
 
 
 mutable struct PlotDiffCallback
@@ -130,6 +128,13 @@ function (cb::PlotDiffCallback)(info)
 
     ρ_iter = RCG_DFTK.compute_density(cb.basis_ref, ψ_iter)
 
+    coarse_ψ = RCG_DFTK.interpolate_f2c(info.basis, cb.basis_ref, cb.ψ_ref)
+    diff = RCG_DFTK.grassmann_diff_DFTK(cb.ψ_ref, ψ_iter)
+    coarse_err = RCG_DFTK.grassmann_diff_DFTK(info.ψ, coarse_ψ)
+    push!(cb.norm_diffs, RCG_DFTK.norm_DFTK(cb.basis_ref, diff))
+
+    println("real coarse%: $(RCG_DFTK.norm_DFTK(info.basis, coarse_err) / norm_DFTK())")
+
     if :density in cb.plotting
         rho = get_rho(abs.(ρ_iter .- cb.ρ_ref), cb.basis_ref.model.lattice)
         hmp = logheatmap(rho ; color=:magma, dpi = 300, title=title, 
@@ -141,9 +146,7 @@ function (cb::PlotDiffCallback)(info)
     end
 
     if :distribution in cb.plotting
-        diff = RCG_DFTK.grassmann_diff_DFTK(cb.ψ_ref, ψ_iter)
-        push!(cb.norm_diffs, RCG_DFTK.norm_DFTK(cb.basis_ref, diff))
-        plot_diff(diff, cb.basis_ref, name = "$(cb.model_name)-distribution-$(title)")
+        plot_diff(diff, cb.basis_ref, cb.Ecuts; name = "$(cb.model_name)-distribution-$(title)")
     end
 
     cb.default_callback(info)
@@ -152,12 +155,14 @@ end
 
 function plot_diff(diff, basis_ref, Ecuts; name = nothing)
     as, es = calculate_energy_distribution(diff, basis_ref)
-    (err_distribution, es, xs, as) = smart_scatter(as, es; Ecuts, dpi = 300, ylims = (1e-16, 1e-2))
+    (err_distribution, es, xs, as) = smart_scatter(as, es; Ecuts, dpi = 300, ylims = (1e-10, 1.0))
     display(err_distribution)
 
     img_path = "./experiments/imgs/"
     data_path = "./experiments/data/"
     if !isnothing(name)
+        # name may contain a subdirectory
+        mkpath(dirname("$(img_path)$name")); mkpath(dirname("$(data_path)$name"))
         savefig(err_distribution, "$(img_path)$name.png")
         open("$(data_path)$name.dat", "w") do io
             println(io, "Ekins normGks amplitudes")
@@ -177,6 +182,7 @@ function plot_ψ(ψ, basis, Ecuts; name = nothing)
     img_path = "./experiments/imgs/"
     data_path = "./experiments/data/"
     if !isnothing(name)
+        mkpath(dirname("$(img_path)$name")); mkpath(dirname("$(data_path)$name"))
         savefig(distribution, "$(img_path)$name.png")
         open("$(data_path)$name.dat", "w") do io
             println(io, "Ekins normGks amplitudes")

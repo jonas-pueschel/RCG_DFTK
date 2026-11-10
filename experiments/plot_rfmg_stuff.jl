@@ -3,6 +3,7 @@ using RCG_DFTK
 using PseudoPotentialData
 using Plots
 using DelimitedFiles
+using BSON
 
 include("setups/ecuts.jl")
 include("setups/silicon_setup.jl")
@@ -11,11 +12,11 @@ include("setups/TiO2_setup.jl")
 
 include("./plotting_scripts/plot_iterates.jl")
 
-model_name = "silicon"
-setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [4,4,4], supercell_size = [1,1,1], 
-    model_terms = :lda)
+model_name = "TiO2"
+setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], 
+    model_terms = :pbe)
 
-Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :factor, factor = 1.7)
+Ecuts = get_Ecuts(800; Ecut_min = 10, mode = :factor, factor = 1.7)
 Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 # Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
@@ -40,30 +41,50 @@ tol = 1.0e-9;
 basis_f = basis_arr[end]
 
 println("\nReference")
-rcgres_ref = riemannian_full_multigrid(basis_arr, basis_arr_ref;
+rcgres_ref1 = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  ψ = ψ_c, ρ = ρ_c, 
  tol = 0.0,
- #callback_coarse = RcgDefaultCallback(),
+#  callback_coarse = RfmgDefaultCallback(),
+#  callback_outer = RfmgDefaultCallback(),
+#  callback_mid = RfmgDefaultCallback(),
  maxiter = 30,
  maxiter_inner = 7,
  #coarse_model_tol_outer = 0.0, 
- coarse_tol_outer = ReduceErrorRatioTolerance(0.2),
- refinement_tol = 0.2,
+ coarse_tol_outer = ReduceErrorRatioTolerance(0.1),
+ refinement_tol = 0.1,
  #coarse_cond = ToleranceMinStepCoarseCondition(0.1),
- coarse_cond = EstimateErrorCoarseCondition(0.25),
+ coarse_cond = EstimateErrorCoarseCondition(0.25) & ResidualNormCoarseCondition(10.0) & MinStepsCoarseCondition(1),
  gradients = [EAGradient(basis) for basis = basis_arr], 
- basis_distance = 2,
+ terminate_on_non_descent = true,
 );
-println("Calculated reference solution in $(rcgres_ref.runtime_ns/1e9) seconds")
-rcgres_ref  = energy_adaptive_riemannian_conjugate_gradient(rcgres_ref.basis, 
-    ψ = rcgres_ref.ψ, ρ = rcgres_ref.ρ, tol = 1e-13)
+
+println("Calculated intermediate reference solution in $((rcgres_ref1.runtime_ns)/1e9) seconds")
+plot_ψ(rcgres_ref1.ψ, rcgres_ref1.basis, Ecuts; name = "$(model_name)-reference-1")
+
+
+rcgres_ref  = energy_adaptive_riemannian_conjugate_gradient(rcgres_ref1.basis, 
+    ψ = rcgres_ref1.ψ, ρ = rcgres_ref1.ρ, tol = 1e-9)
+
+println("Refined reference solution in $((rcgres_ref.runtime_ns)/1e9) seconds")
 ψ_ref = rcgres_ref.ψ
 ρ_ref = rcgres_ref.ρ
 basis_ref = rcgres_ref.basis
+Ecut_ref = rcgres_ref.basis.Ecut
+BSON.@save "experiments/reference_solutions/$(model_name)_ref.BSON" ψ_ref ρ_ref Ecut_ref
 
+function sqrt_eq_steps(first, last, n_steps)
+    fs = sqrt(first)
+    ls = sqrt(last)
+    stepsize = (ls - fs)/(n_steps-1)
+    return [(fs + a * stepsize)^2 for a = 0:(n_steps-1)]
+end
 
-Ecuts = [10.0, 21.0, 38.0, 58.8, 84.8, 117.5, 202.8, 385.7, 713.4]
-#Ecuts = get_Ecuts(600; Ecut_min = 9, mode = :factor, factor = 1.7)
+# # silicon and GaAs
+# Ecuts = [10.0, 21.0, 38.0, 58.8, 84.8, 117.5, 202.8, 385.7, 713.4]
+# TiO2
+Ecuts = [10.0, 39.0, 87.0, 154.0, 240.0, 640.0]
+Ecuts = [50.0, 84.0, 127.3, 179.2, 240.0, 600]
+# #Ecuts = get_Ecuts(600; Ecut_min = 9, mode = :factor, factor = 1.7)
 Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 plot_ψ(ψ_ref, basis_ref, Ecuts; name = "$(model_name)-reference")
@@ -83,35 +104,24 @@ scfres_start = h1_riemannian_gradient(basis_c; tol = 1e-4, callback = (info) -> 
 
 
 
-cb_rfmgv = PlotDiffCallback("EARFMG-V", model_name, ψ_ref, ρ_ref, basis_ref, Ecuts;
-    #plotting = [:distribution]
-    )
-rfmgv = riemannian_full_multigrid(basis_arr, basis_arr_ref; 
-        ψ = ψ_c, ρ = ρ_c, 
-        maxiter_inner = 3,
-        tol = 0,
-        is_converged_outer = (tol) -> (info -> false),
-        cycle = VCycle(1,1),
-        callback_outer = cb_rfmgv);
-
-plt1 = plot(1:length(cb_rfmgv.norm_diffs), cb_rfmgv.norm_diffs; label = "rfmgv", yscale = :log10)
-
 cb_rfmga = PlotDiffCallback("EARFMG-A", model_name, ψ_ref, ρ_ref, basis_ref, Ecuts; 
     #plotting = [:distribution]
     )
 rfmga = riemannian_full_multigrid(basis_arr, basis_arr_ref; 
         ψ = ψ_c, ρ = ρ_c, tol = 1e-10, 
-        refinement_tol = 1e-1,
+        refinement_tol = 0.1,
         coarse_tol_outer = ReduceErrorRatioTolerance(1e-2),
-        coarse_cond = EstimateErrorCoarseCondition(0.25),
+        coarse_cond = EstimateErrorCoarseCondition(0.25) & ResidualNormCoarseCondition(5.0) & MinStepsCoarseCondition(1),
         callback_outer = cb_rfmga);
 
+
+display(plot(1:length(rfmga.levels), rfmga.levels))
 
 cb_nscf = PlotDiffCallback("nSCF", model_name, ψ_ref, ρ_ref, basis_ref, Ecuts; 
     #plotting = [:distribution]
     )
 nscf = nested_scf(basis_arr, basis_arr_ref; ψ = ψ_c, ρ = ρ_c, 
-    is_converged_inner = (info) -> (info.n_iter >= 6),
+    refinement_tol = 0.1,
     callback_inner = cb_nscf
     );
 
@@ -120,7 +130,7 @@ cb_nea = PlotDiffCallback("nEARCG", model_name, ψ_ref, ρ_ref, basis_ref, Ecuts
     #plotting = [:distribution]
     )
 nearcg = nested_earcg(basis_arr, basis_arr_ref; ψ = ψ_c, ρ = ρ_c,
-    is_converged_inner = (info) -> (info.n_iter >= 4),
+    refinement_tol = 0.1,
     callback_inner = cb_nea
     );
 
@@ -130,7 +140,8 @@ cb_nh1 = PlotDiffCallback("nH1RCG", model_name, ψ_ref, ρ_ref, basis_ref, Ecuts
     #plotting = [:distribution]
     )
 nh1rcg = nested_h1rcg(basis_arr, basis_arr_ref; ψ = ψ_c, ρ = ρ_c,
-    is_converged_inner = (info) -> (info.n_iter >= 10),
+    refinement_tol = 0.1,
+    #is_converged_inner = (info) -> (info.n_iter >= 10),
     callback_inner = cb_nh1
     );
 

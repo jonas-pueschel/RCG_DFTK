@@ -6,13 +6,7 @@ mutable struct ApproxCoarseGridCostResidual <: AbstractCostResidual
     end
 end
 
-function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::ApproxCoarseGridCostResidual)
-    Nk = size(ψ)[1]
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
-
+function initialize_cost_residual(Hψ, Λ, res, e_tot, basis, cgcr::ApproxCoarseGridCostResidual)
     Rres = - cgcr.wk
     cgcr.wk += res
 
@@ -41,14 +35,12 @@ mutable struct CoarseGridCostResidual <: AbstractCostResidual
     end
 end
 
-function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::CoarseGridCostResidual)
-    Nk = size(ψ)[1]
-    Hψ = H * ψ
-    Λ = [ψ[ik]'Hψ[ik] for ik in 1:Nk]
-    Λ = 0.5 * [(Λ[ik] + Λ[ik]') for ik in 1:Nk]
-    res = [Hψ[ik] - ψ[ik] * Λ[ik] for ik in 1:Nk]
-
+function initialize_cost_residual(Hψ, Λ, res, e_tot, basis, cgcr::CoarseGridCostResidual)
     Rres = - cgcr.wk
+
+    #println("angle ratio (Ecut = $(basis.Ecut)): $(inner_product_DFTK(basis, res, Rres) / (norm_DFTK(basis, Rres) * norm_DFTK(basis, res)))")
+    #println("norm res (Ecut = $(basis.Ecut)): $(norm_DFTK(basis, res))")
+
     cgcr.wk += res
     return Hψ, Λ, Rres, e_tot
 end
@@ -273,44 +265,156 @@ function adjDinvRet(ψ,z,u)
     return proj_TSt(z, w)
 end
 
+"""
+Decides whether the next direction of `two_level_riemannian_optimization` is a coarse
+correction. A condition defines `coarse_condition_holds(ctx, cc)` for a
+`CoarseConditionContext` `ctx`, which must not change `cc`, and, if it carries state,
+`update_coarse_condition!(cc, ctx)`, which is called once a coarse correction is taken.
+Conditions are combined with `&` (all have to hold) and `|` (one has to hold), e.g.
+`MinStepsCoarseCondition(1) & ResidualRatioCoarseCondition(0.45)`; they are evaluated from
+left to right and only as far as needed, so cheap conditions should come first.
+"""
 abstract type AbstractCoarseCondition end
 
-mutable struct ToleranceMinStepCoarseCondition <: AbstractCoarseCondition
-    η
-    ϵ
+"""
+Everything a coarse condition may use at the current fine iterate: `basis_c`, `basis_f`, `ψ_c`,
+`ψ_f`, the fine residual `res`, the restricted residual `Rres` and the number of performed
+steps `n_iter`. The coarse density and the evaluation on the coarse grid (energies,
+Hamiltonian and standard residual of the coarse problem at `ψ_c`) are computed on demand by
+`coarse_density!` and `coarse_evaluation!` and cached; if a coarse correction is taken, they are
+passed on to the coarse solver instead of being computed again.
+"""
+mutable struct CoarseConditionContext
+    basis_c
+    basis_f
     ψ_c
-    dist
+    ψ_f
+    res
+    Rres
     n_iter
-    # ϵ = nothing: use the tolerance of the level the condition is used on, see init_coarse_condition!
-    function ToleranceMinStepCoarseCondition(η, ϵ = nothing; dist = 1)
-        return new(η, ϵ, nothing, dist, 0)
-    end
+    occupation
+    ρ_f
+    coarse_density  # AbstractCoarseDensity
+    ρ_c
+    coarse_eval
 end
+CoarseConditionContext(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, occupation, ρ_f, coarse_density) =
+    CoarseConditionContext(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, occupation, ρ_f,
+                           coarse_density, nothing, nothing)
+
+function coarse_density!(ctx::CoarseConditionContext)
+    if isnothing(ctx.ρ_c)
+        ctx.ρ_c = calculate_coarse_density(ctx.basis_c, ctx.basis_f, ctx.ρ_f, ctx.ψ_c, ctx.ψ_f,
+                                           ctx.coarse_density)
+    end
+    return ctx.ρ_c
+end
+
+# (; energies, H, Hψ, Λ, res) of the (uncorrected) coarse problem at ψ_c, see initial_eval
+# of riemannian_conjugate_gradient
+function coarse_evaluation!(ctx::CoarseConditionContext)
+    if isnothing(ctx.coarse_eval)
+        energies, H = energy_hamiltonian(ctx.basis_c, ctx.ψ_c, ctx.occupation; ρ = coarse_density!(ctx))
+        Hψ, Λ, res = compute_residual(H, ctx.ψ_c)
+        ctx.coarse_eval = (; energies, H, Hψ, Λ, res)
+    end
+    return ctx.coarse_eval
+end
+
+function check_coarse_condition(ctx::CoarseConditionContext, cc::AbstractCoarseCondition)
+    coarse_condition_holds(ctx, cc) || return false
+    update_coarse_condition!(cc, ctx)
+    return true
+end
+
+update_coarse_condition!(cc::AbstractCoarseCondition, ctx) = cc
 
 # Called by two_level_riemannian_optimization on its own (deep) copy of the coarse condition,
 # with the tolerance tol of that level.
 init_coarse_condition!(cc::AbstractCoarseCondition, tol) = cc
-function init_coarse_condition!(cc::ToleranceMinStepCoarseCondition, tol)
-    isnothing(cc.ϵ) && (cc.ϵ = tol)
+
+# all (AllCoarseConditions) or one (AnyCoarseCondition) of the conditions have to hold; once a
+# coarse correction is taken, all conditions are updated
+struct AllCoarseConditions <: AbstractCoarseCondition
+    conditions::Vector{AbstractCoarseCondition}
+end
+struct AnyCoarseCondition <: AbstractCoarseCondition
+    conditions::Vector{AbstractCoarseCondition}
+end
+const CombinedCoarseCondition = Union{AllCoarseConditions, AnyCoarseCondition}
+
+all_parts(cc::AllCoarseConditions) = cc.conditions
+all_parts(cc::AbstractCoarseCondition) = AbstractCoarseCondition[cc]
+any_parts(cc::AnyCoarseCondition) = cc.conditions
+any_parts(cc::AbstractCoarseCondition) = AbstractCoarseCondition[cc]
+Base.:&(a::AbstractCoarseCondition, b::AbstractCoarseCondition) =
+    AllCoarseConditions(vcat(all_parts(a), all_parts(b)))
+Base.:|(a::AbstractCoarseCondition, b::AbstractCoarseCondition) =
+    AnyCoarseCondition(vcat(any_parts(a), any_parts(b)))
+
+coarse_condition_holds(ctx, cc::AllCoarseConditions) = all(c -> coarse_condition_holds(ctx, c), cc.conditions)
+coarse_condition_holds(ctx, cc::AnyCoarseCondition) = any(c -> coarse_condition_holds(ctx, c), cc.conditions)
+function update_coarse_condition!(cc::CombinedCoarseCondition, ctx)
+    foreach(c -> update_coarse_condition!(c, ctx), cc.conditions)
+    return cc
+end
+function init_coarse_condition!(cc::CombinedCoarseCondition, tol)
+    foreach(c -> init_coarse_condition!(c, tol), cc.conditions)
     return cc
 end
 
-function EveryKCoarseCorr(k)
-    return ToleranceMinStepCoarseCondition(0.0, 0.0; dist = k-1)
+# the restricted residual is at least η times the fine residual
+struct ResidualRatioCoarseCondition <: AbstractCoarseCondition
+    η
+end
+coarse_condition_holds(ctx, cc::ResidualRatioCoarseCondition) =
+    norm_DFTK(ctx.basis_c, ctx.Rres) ≥ cc.η * norm_DFTK(ctx.basis_f, ctx.res)
+
+# ψ_c has moved more than ϵ since the last coarse correction
+# (ϵ = nothing: use the tolerance of the level the condition is used on, see init_coarse_condition!)
+mutable struct MinDistanceCoarseCondition <: AbstractCoarseCondition
+    ϵ
+    ψ_c
+end
+MinDistanceCoarseCondition(ϵ = nothing) = MinDistanceCoarseCondition(ϵ, nothing)
+function init_coarse_condition!(cc::MinDistanceCoarseCondition, tol)
+    isnothing(cc.ϵ) && (cc.ϵ = tol)
+    return cc
+end
+coarse_condition_holds(ctx, cc::MinDistanceCoarseCondition) =
+    isnothing(cc.ψ_c) || norm_DFTK(ctx.basis_c, cc.ψ_c - ctx.ψ_c) > cc.ϵ
+function update_coarse_condition!(cc::MinDistanceCoarseCondition, ctx)
+    cc.ψ_c = ctx.ψ_c
+    return cc
 end
 
-function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::ToleranceMinStepCoarseCondition) where {T}
-    Iψ_c = interpolate_c2f(basis_c, basis_f, ψ_c)
-    #println("dist: $(norm_DFTK(basis_f, Iψ_c - ψ_f))")
-    if (cc.n_iter > n_iter)
-        return false
-    end
-    c1 = norm_DFTK(basis_c, Rres) ≥ cc.η * norm_DFTK(basis_f, res) 
-    c2 = isnothing(cc.ψ_c) ? true : norm_DFTK(basis_f, cc.ψ_c - ψ_c) > cc.ϵ
-    (c1 && c2) && (cc.ψ_c = ψ_c)
-    (c1 && c2) && (cc.n_iter = n_iter + cc.dist + 1)
-    return c1 && c2
+# at least dist (fine) steps since the last coarse correction; dist = 1: no two successive ones
+mutable struct MinStepsCoarseCondition <: AbstractCoarseCondition
+    dist
+    n_iter
 end
+MinStepsCoarseCondition(dist = 1) = MinStepsCoarseCondition(dist, 0)
+coarse_condition_holds(ctx, cc::MinStepsCoarseCondition) = cc.n_iter ≤ ctx.n_iter
+function update_coarse_condition!(cc::MinStepsCoarseCondition, ctx)
+    cc.n_iter = ctx.n_iter + cc.dist + 1
+    return cc
+end
+
+# the residual of the (uncorrected) coarse problem at ψ_c is below tol, measured in norm (:L2
+# or :H1). Needs the coarse Hamiltonian, which is reused by the coarse solver.
+struct ResidualNormCoarseCondition <: AbstractCoarseCondition
+    tol
+    norm::Symbol
+end
+ResidualNormCoarseCondition(tol; norm = :L2) = ResidualNormCoarseCondition(tol, norm)
+coarse_condition_holds(ctx, cc::ResidualNormCoarseCondition) =
+    norm_DFTK(ctx.basis_c, coarse_evaluation!(ctx).res, cc.norm) < cc.tol
+
+# the former combined conditions
+ToleranceMinStepCoarseCondition(η, ϵ = nothing; dist = 1) =
+    MinStepsCoarseCondition(dist) & MinDistanceCoarseCondition(ϵ) & ResidualRatioCoarseCondition(η)
+
+EveryKCoarseCorr(k) = MinStepsCoarseCondition(k - 1)
 
 # classical (non-adaptive) cycles: every cycle consists of ν_pre smoothing (gradient) steps,
 # one coarse correction and ν_post smoothing steps. Used as coarse condition on every level;
@@ -329,9 +433,7 @@ SawtoothCycle(ν_post) = CycleCoarseCondition(0, ν_post, 1)
 cycle_length(cc::CycleCoarseCondition) = cc.ν_pre + 1 + cc.ν_post
 
 # n_iter is the number of steps already performed, i.e. the direction for step n_iter + 1 is chosen
-function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::CycleCoarseCondition) where {T}
-    return mod(n_iter, cycle_length(cc)) == cc.ν_pre
-end
+coarse_condition_holds(ctx, cc::CycleCoarseCondition) = mod(ctx.n_iter, cycle_length(cc)) == cc.ν_pre
 
 abstract type AbstractCoarseDensity end
 

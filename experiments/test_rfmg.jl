@@ -4,70 +4,48 @@ using PseudoPotentialData
 using Plots
 using DelimitedFiles
 
-#otherwise svgs are huge!
-gr(fmt = :png)
-
-# run each method used below once, such that the timings do not contain compilation time
-# (h1rg: initial value; rfmg: reference and RFMG runs; nested_it: nested EARCG, H1RCG and SCF)
-include("precompile_methods.jl");
-precompile_methods(["rfmg", "nested_it", "h1rg"]);
-
 include("setups/ecuts.jl")
 include("setups/silicon_setup.jl")
 include("setups/GaAs_setup.jl")
 include("setups/TiO2_setup.jl")
 
-# keep the system awake while this Julia process runs (Windows only)
-# const ES_CONTINUOUS      = 0x80000000
-# const ES_SYSTEM_REQUIRED = 0x00000001
-# keep_awake()  = ccall((:SetThreadExecutionState, "kernel32"), UInt32, (UInt32,), ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
-# allow_sleep() = ccall((:SetThreadExecutionState, "kernel32"), UInt32, (UInt32,), ES_CONTINUOUS)
+include("./plotting_scripts/plot_iterates.jl")
 
-# keep_awake()
-
-# Silicon lattice constant in Bohr
-#Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630, 1010]
-#Ecuts = [10, 40, 160, 630]
 model_name = "silicon"
-setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1], model_terms = :hartree, supersampling = 2)
-#setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
-#setup(; Ecut) = TiO2_setup(; Ecut,  kgrid = [2,2,2], supercell_size = [1,1,1])
-#Ecuts = [10, 16, 25, 40, 63, 101, 160, 250, 400, 630]
-#Ecuts = [10, 25, 63,  160, 400, 500]
+setup(; Ecut) = silicon_setup(; Ecut,  kgrid = [4,4,4], supercell_size = [1,1,1], 
+    model_terms = :lda)
 
-Ecuts = get_Ecuts(600; Ecut_min = 9, mode = :factor, factor = 1.7)
+Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :factor, factor = 1.7)
 Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 # Ecuts = get_Ecuts(1000; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
 # Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :offset, offset = 0.57)
-#TiO2
-#Ecuts = [40, 63, 101, 160, 250, 400, 500]
+
 
 model, basis_arr = setup(; Ecut = Ecuts); 
-_, basis_arr_ref = setup(; Ecut = 1.1 .* Ecuts); 
+_, basis_arr_ref = setup(; Ecut = Ecuts_ref); 
 
-# Ecuts = [16, 40, 101, 250]
+
 
 basis_c = basis_arr[1]
 # Initial value
-#scfres_start = self_consistent_field(basis_c; tol = 1e-2);
-scfres_start = h1_riemannian_gradient(basis_c; tol = 1e-4);
+scfres_start = h1_riemannian_gradient(basis_c; tol = 1e-4, callback = (info) -> nothing);
 ψ_c = DFTK.select_occupied_orbitals(basis_c, scfres_start.ψ, scfres_start.occupation).ψ;
 ρ_c = scfres_start.ρ
 
 # Convergence tolerance
 tol = 1.0e-9;
-ψ_ref = nothing
-basis_ref = nothing
 
-# Reference solution on the finest grid, needed during the runs to track the distance.
-# The silent RFMG run provides the initial guess and also compiles the methods, such that
-# the timings below do not contain compilation time.
+
+basis_f = basis_arr[end]
+
 println("\nReference")
-scfres_ref = riemannian_full_multigrid(basis_arr, basis_arr_ref;
+rcgres_ref1 = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  ψ = ψ_c, ρ = ρ_c, 
- tol = 1e-11,
+ tol = 0.0,
  #callback_coarse = RcgDefaultCallback(),
+ callback_outer = RfmgDefaultCallback(),
+ callback_mid = RfmgDefaultCallback(),
  maxiter = 30,
  maxiter_inner = 7,
  #coarse_model_tol_outer = 0.0, 
@@ -76,19 +54,17 @@ scfres_ref = riemannian_full_multigrid(basis_arr, basis_arr_ref;
  #coarse_cond = ToleranceMinStepCoarseCondition(0.1),
  coarse_cond = EstimateErrorCoarseCondition(0.25),
  gradients = [EAGradient(basis) for basis = basis_arr], 
- basis_distance = 2,
 );
-println("Calculated reference solution in $(scfres_ref.runtime_ns/1e9) seconds")
-# scfres_ref = energy_adaptive_riemannian_conjugate_gradient(scfres_ref.basis; 
-#     ρ = scfres_ref.ρ, ψ = scfres_ref.ψ, tol = 1e-11)
-ψ_ref = scfres_ref.ψ
-res_ref = scfres_ref.res
+rcgres_ref  = energy_adaptive_riemannian_conjugate_gradient(rcgres_ref1.basis, 
+    ψ = rcgres_ref1.ψ, ρ = rcgres_ref1.ρ, tol = 1e-13)
+println("Calculated reference solution in $((rcgres_ref.runtime_ns + rcgres_ref1.runtime_ns)/1e9) seconds")
+ψ_ref = rcgres_ref.ψ
+ρ_ref = rcgres_ref.ρ
+basis_ref = rcgres_ref.basis
 
 
-basis_ref = basis_arr[end]
-
-
-Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :factor, factor = 10^(0.2))
+Ecuts = [10.0, 21.0, 38.0, 58.8, 84.8, 117.5, 202.8, 385.7, 713.4]
+#Ecuts = get_Ecuts(600; Ecut_min = 9, mode = :factor, factor = 1.7)
 Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 # Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)

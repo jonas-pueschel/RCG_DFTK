@@ -55,6 +55,7 @@ DFTK.@timing function riemannian_full_multigrid(
     # see multilevel_riemannian_optimization. The cycles are repeated until the coarse tolerance is met.
     cycle = nothing,
     cycle_finest = cycle,
+    terminate_on_non_descent = true,
 )
     start_ns = time_ns()
     @assert length(basis_arr) == length(basis_arr_ref)
@@ -203,7 +204,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     levels,
                     cycle,
                     cycle_finest,
-                    terminate_on_non_descent = true,
+                    terminate_on_non_descent,
                 )
                 return result.ψ, result.ρ
             end

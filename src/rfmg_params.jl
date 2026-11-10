@@ -112,26 +112,23 @@ error_norm(::AlwaysRefine, basis, e) = norm_DFTK(basis, e)
 (rc::AlwaysRefine)(info) = true
 
 
-mutable struct EstimateErrorCoarseCondition <: AbstractCoarseCondition
+# the coarse part of the error estimate is at least η times the whole estimate, in norm (:L2 or :H1)
+struct ErrorRatioCoarseCondition <: AbstractCoarseCondition
     η
     norm::Symbol
-    dist
-    n_iter 
-    function EstimateErrorCoarseCondition(η; norm = :L2, dist = 1)
-        return new(η, norm, dist, 0)
-    end
 end
+ErrorRatioCoarseCondition(η; norm = :L2) = ErrorRatioCoarseCondition(η, norm)
 
-function check_coarse_condition(basis_c::PlaneWaveBasis{T}, basis_f::PlaneWaveBasis{T}, ψ_c, ψ_f, res, Rres, n_iter, cc::EstimateErrorCoarseCondition) where {T}
-    if (cc.n_iter > n_iter)
-        return false
-    end
+function coarse_condition_holds(ctx, cc::ErrorRatioCoarseCondition)
+    (; basis_c, basis_f, ψ_c, ψ_f, res) = ctx
     est_err = invert_refinement_metric_improved(basis_f, ψ_f, res)
     est_err_coarse = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, est_err, ProjectionMap())
-    c1 = norm_DFTK(basis_c, est_err_coarse, cc.norm) ≥ cc.η * norm_DFTK(basis_f, est_err, cc.norm)
-    c1 && (cc.n_iter = cc.n_iter + cc.dist + 1)
-    return c1
+    return norm_DFTK(basis_c, est_err_coarse, cc.norm) ≥ cc.η * norm_DFTK(basis_f, est_err, cc.norm)
 end
+
+# the former combined condition
+EstimateErrorCoarseCondition(η; norm = :L2, dist = 1) =
+    MinStepsCoarseCondition(dist) & ErrorRatioCoarseCondition(η; norm)
 
 # coarse tolerance such that the coarse part of the error estimate becomes target_ratio of the
 # whole estimate, assuming the fine part stays unchanged. Coarse and fine part consist of
@@ -245,6 +242,8 @@ function initialize_cost_residual(H, ψ, e_tot, basis, cgcr::GreedyCostResidual)
     Rres = cgcr.Rres
     return nothing, nothing, Rres, e_tot
 end
+initialize_cost_residual(Hψ, Λ, res, e_tot, basis, cgcr::GreedyCostResidual) =
+    initialize_cost_residual(nothing, nothing, e_tot, basis, cgcr)
 
 function calculate_cost_residual(H , ψ, e_tot, basis, ::GreedyCostResidual)
     Nk = size(ψ)[1]

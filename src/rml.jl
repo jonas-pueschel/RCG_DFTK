@@ -6,8 +6,8 @@ rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing,
             coarse_cost_residual = CoarseGridCostResidual, 
             levels = Float64[],
             is_converged = nothing
-            ) = function (ψ_c, ρ_c, Rres, tol)
-                
+            ) = function (ψ_c, ρ_c, Rres, tol, initial_eval = nothing)
+
     cr = coarse_cost_residual(ψ_c, Rres)
     is_converged_inner = isnothing(is_converged) ? RcgConvergenceResidualMGH(tol, 0.1, ψ_c) : 
                 is_converged(tol);
@@ -22,6 +22,7 @@ rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing,
         ),
         do_rayleigh_ritz = false,
         levels,
+        initial_eval,
     )
     return result.ψ, result.ρ
 end
@@ -63,6 +64,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     do_rayleigh_ritz = true,
     n_iter = 0,
     terminate_on_non_descent = false,
+    initial_eval = nothing,  # see riemannian_conjugate_gradient
 ) where {T}
     start_ns = time_ns()
     # the following objects carry state (of the current level and run): work on own copies,
@@ -115,11 +117,15 @@ DFTK.@timing function two_level_riemannian_optimization(
         energies = (;total = Inf)
         H = nothing
         Hψ_f, Λ, res, cost = initialize_cost_residual(H, ψ_f, energies.total, basis_f, cost_residual)
-    else
+    elseif isnothing(initial_eval)
         energies, H = energy_hamiltonian(basis_f, ψ_f, occupation; ρ = ρ_f)
 
         # compute first residual
         Hψ_f, Λ, res, cost = initialize_cost_residual(H, ψ_f, energies.total, basis_f, cost_residual)
+    else
+        (; energies, H) = initial_eval
+        Hψ_f, Λ, res, cost = initialize_cost_residual(initial_eval.Hψ, initial_eval.Λ, initial_eval.res,
+                                                      energies.total, basis_f, cost_residual)
     end
 
 
@@ -137,10 +143,12 @@ DFTK.@timing function two_level_riemannian_optimization(
     )
 
     # calculate descent direction
-    if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
-        ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+    ctx = CoarseConditionContext(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, occupation, ρ_f, coarse_density)
+    if check_coarse_condition(ctx, coarse_cond)
+        ρ_c = coarse_density!(ctx)
         tol_c = get_coarse_tol(info, coarse_tol)
-        ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+        # reuse the coarse evaluation, if the coarse condition needed it
+        ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c, ctx.coarse_eval)
         η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
         cc = true
     else 
@@ -211,14 +219,15 @@ DFTK.@timing function two_level_riemannian_optimization(
         ψ_c = restrict_point(basis_c, basis_f, ψ_f, point_restriction)
         Rres = restrict_vector(basis_c, basis_f, ψ_c, ψ_f, res, multilevel_map)
         # calculate descent direction
-        if check_coarse_condition(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, coarse_cond)
-            ρ_c = calculate_coarse_density(basis_c, basis_f, ρ_f, ψ_c, ψ_f, coarse_density)
+        ctx = CoarseConditionContext(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, occupation, ρ_f, coarse_density)
+        if check_coarse_condition(ctx, coarse_cond)
+            ρ_c = coarse_density!(ctx)
             # info does not contain the current Rres yet (and without check_convergence_early
             # not even the current iterate)
             info_c = merge(info, (; ψ = ψ_f, res, Rres, norm_res = norm_DFTK(basis_f, res),
                                     norm_Rres = norm_DFTK(basis_c, Rres), n_iter))
             tol_c = get_coarse_tol(info_c, coarse_tol)
-            ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+            ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c, ctx.coarse_eval)
             η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
             cc = true
         end
@@ -324,6 +333,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     cycle = nothing,
     cycle_finest = cycle,
     terminate_on_non_descent = false,
+    initial_eval = nothing,  # on the finest level, see riemannian_conjugate_gradient
 )
     for k = 1:(length(basis_arr) - 1)
         @assert basis_arr[k].Ecut < basis_arr[k + 1].Ecut
@@ -334,7 +344,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     elseif length(basis_arr) == 2
         ml_coarse_solver = rcg_coarse_solver(basis_arr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual, levels)
     else
-        ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
+        ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol, initial_eval = nothing)
             cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
             result = multilevel_riemannian_optimization(basis_arr[1:end-1]; ρ = ρ_c, ψ = ψ_c, 
                 tol,
@@ -360,7 +370,8 @@ DFTK.@timing function multilevel_riemannian_optimization(
                 iteration_strats_coarse = iteration_strats_coarse[1:end-1],
                 do_rayleigh_ritz = false,
                 levels,
-                terminate_on_non_descent
+                terminate_on_non_descent,
+                initial_eval,
             )
             return result.ψ, result.ρ
         end
@@ -379,5 +390,6 @@ DFTK.@timing function multilevel_riemannian_optimization(
         do_rayleigh_ritz,
         n_iter,
         terminate_on_non_descent,
-        levels)
+        levels,
+        initial_eval)
 end
