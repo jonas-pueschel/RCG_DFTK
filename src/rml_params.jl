@@ -435,6 +435,21 @@ cycle_length(cc::CycleCoarseCondition) = cc.ν_pre + 1 + cc.ν_post
 # n_iter is the number of steps already performed, i.e. the direction for step n_iter + 1 is chosen
 coarse_condition_holds(ctx, cc::CycleCoarseCondition) = mod(ctx.n_iter, cycle_length(cc)) == cc.ν_pre
 
+# On an inner level, the γ cycles of one coarse correction of the next finer level follow each
+# other directly. The post-smoothing of one cycle then also serves as the pre-smoothing of the
+# next (otherwise e.g. a W(1,1)-cycle takes two subsequent steps in the middle of the W):
+# ν_pre steps, then γ times a coarse correction followed by ν_post steps.
+struct InnerCycleCoarseCondition <: AbstractCoarseCondition
+    cycle::CycleCoarseCondition
+end
+
+inner_cycle_length(cc::CycleCoarseCondition) = cc.ν_pre + cc.γ * (1 + cc.ν_post)
+
+function coarse_condition_holds(ctx, cc::InnerCycleCoarseCondition)
+    (; ν_pre, ν_post) = cc.cycle
+    return ctx.n_iter ≥ ν_pre && mod(ctx.n_iter - ν_pre, 1 + ν_post) == 0
+end
+
 abstract type AbstractCoarseDensity end
 
 struct RecalculateDensity <: AbstractCoarseDensity end

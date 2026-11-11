@@ -11,7 +11,7 @@ const REFERENCE_SOLUTION_DIR = joinpath(@__DIR__, "..", "reference_solutions")
 const MULTIGRID_MODELS = Dict(
     "TiO2" => (;
         setup = (; Ecut) -> TiO2_setup(; Ecut, kgrid = [2, 2, 2], model_terms = :pbe),
-        Ecuts = [50.0, 84.0, 127.3, 179.2, 240.0, 600.0],
+        Ecuts = [50.0, 127.3, 240.0, 600.0], #[50.0, 84.0, 127.3, 179.2, 240.0, 600.0],
         Ecut_ref = 800.0,
     ),
     "GaAs" => (;

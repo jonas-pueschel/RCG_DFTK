@@ -96,14 +96,25 @@ mutable struct PlotDiffCallback
     n_iter 
     norm_diffs
     plotting
-    function PlotDiffCallback(name, model_name, ψ_ref, ρ_ref, basis_ref, Ecuts; default_callback = (info) -> nothing, plotting = [:density, :distribution])
-        return new(name, model_name, ψ_ref, ρ_ref, basis_ref, Ecuts, default_callback, 0, [], plotting)
+    img_path
+    data_path
+    heatmap_lims
+    function PlotDiffCallback(name, model_name, ψ_ref, ρ_ref, basis_ref, Ecuts; 
+            default_callback = (info) -> nothing, 
+            plotting = [:density, :distribution],
+            img_path = "./experiments/imgs/",
+            data_path = "./experiments/data/",
+            heatmap_lims = nothing)
+        return new(name, model_name, ψ_ref, ρ_ref, basis_ref, Ecuts, default_callback, 0, [], 
+            plotting, img_path, data_path, heatmap_lims)
     end
 end
 
 # heatmap with a log10 colorbar; cticks sets the colorbar ticks, other kwargs go to the main heatmap
-function logheatmap(A; cticks = nothing, color = :inferno, dpi = 100, kw...)
-    lo, hi = log10.(extrema(A))
+# lims = (min, max) (in the units of A, not log10) fixes the color range, e.g. to share it between
+# plots; values outside are drawn in the colors of the limits. Default: extrema of A
+function logheatmap(A; cticks = nothing, color = :inferno, dpi = 100, lims = nothing, kw...)
+    lo, hi = log10.(something(lims, extrema(A)))
     cticks = something(cticks, round.(exp10.(range(lo, hi, 5)), sigdigits = 2))
     cvals = range(lo, hi, 256)
     main = heatmap(log10.(A); clims = (lo, hi), color, colorbar = false, grid = false, kw...)
@@ -118,7 +129,6 @@ function (cb::PlotDiffCallback)(info)
     cb.n_iter += 1
 
     title = "$(cb.name)-$(cb.n_iter)"
-    img_path = "./experiments/imgs/"
     # option A: extrapolate ρ
     # option B: recalculate density
 
@@ -133,61 +143,64 @@ function (cb::PlotDiffCallback)(info)
     coarse_err = RCG_DFTK.grassmann_diff_DFTK(info.ψ, coarse_ψ)
     push!(cb.norm_diffs, RCG_DFTK.norm_DFTK(cb.basis_ref, diff))
 
-    println("real coarse%: $(RCG_DFTK.norm_DFTK(info.basis, coarse_err) / norm_DFTK())")
-
     if :density in cb.plotting
         rho = get_rho(abs.(ρ_iter .- cb.ρ_ref), cb.basis_ref.model.lattice)
-        hmp = logheatmap(rho ; color=:magma, dpi = 300, title=title, 
+        hmp = logheatmap(rho ; color=:magma, dpi = 300, title=title, lims = cb.heatmap_lims,
             xaxis=false, yaxis=false, aspect_ratio = :equal, #colorbar=:none,
             showaxis = false, ticks= false)
-
-        savefig(hmp, "$(img_path)$(cb.model_name)-densityerr-$(title).png")
+        
+        save_png(hmp, "$(cb.img_path)$(cb.model_name)-densityerr-$(title).png")
         display(hmp)
     end
 
     if :distribution in cb.plotting
-        plot_diff(diff, cb.basis_ref, cb.Ecuts; name = "$(cb.model_name)-distribution-$(title)")
+        plot_diff(diff, cb.basis_ref, cb.Ecuts; 
+            name = "$(cb.model_name)-distribution-$(title)",
+            img_path = cb.img_path,
+            data_path = cb.data_path)
     end
 
     cb.default_callback(info)
 end
 
 
-function plot_diff(diff, basis_ref, Ecuts; name = nothing)
+# all files are saved via these two functions, which create the directory of the file if necessary
+# (file names may also contain subdirectories)
+function save_png(plt, file)
+    mkpath(dirname(file))
+    savefig(plt, file)
+end
+
+function save_distribution(file, es, xs, as)
+    mkpath(dirname(file))
+    open(file, "w") do io
+        println(io, "Ekins normGks amplitudes")
+        writedlm(io, [es xs as], ' ')
+    end
+end
+
+function plot_diff(diff, basis_ref, Ecuts; name = nothing, img_path = "./experiments/imgs/", data_path = "./experiments/data/")
     as, es = calculate_energy_distribution(diff, basis_ref)
     (err_distribution, es, xs, as) = smart_scatter(as, es; Ecuts, dpi = 300, ylims = (1e-10, 1.0))
     display(err_distribution)
 
-    img_path = "./experiments/imgs/"
-    data_path = "./experiments/data/"
     if !isnothing(name)
-        # name may contain a subdirectory
-        mkpath(dirname("$(img_path)$name")); mkpath(dirname("$(data_path)$name"))
-        savefig(err_distribution, "$(img_path)$name.png")
-        open("$(data_path)$name.dat", "w") do io
-            println(io, "Ekins normGks amplitudes")
-            writedlm(io, [es xs as], ' ')
-        end
+        save_png(err_distribution, "$(img_path)$name.png")
+        save_distribution("$(data_path)$name.dat", es, xs, as)
     end
 
     return err_distribution
 end
 
 
-function plot_ψ(ψ, basis, Ecuts; name = nothing) 
+function plot_ψ(ψ, basis, Ecuts; name = nothing, img_path = "./experiments/imgs/",     data_path = "./experiments/data/") 
     as, es = calculate_energy_distribution(ψ, basis)
     # second palette color (orange), to tell iterates apart from the differences (first color)
     (distribution, es, xs, as) = smart_scatter(as, es; Ecuts, dpi = 300, color = palette(:default)[2])
     
-    img_path = "./experiments/imgs/"
-    data_path = "./experiments/data/"
     if !isnothing(name)
-        mkpath(dirname("$(img_path)$name")); mkpath(dirname("$(data_path)$name"))
-        savefig(distribution, "$(img_path)$name.png")
-        open("$(data_path)$name.dat", "w") do io
-            println(io, "Ekins normGks amplitudes")
-            writedlm(io, [es xs as], ' ')
-        end
+        save_png(distribution, "$(img_path)$name.png")
+        save_distribution("$(data_path)$name.dat", es, xs, as)
     end
 
     display(distribution)

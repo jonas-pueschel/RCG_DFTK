@@ -9,7 +9,7 @@ include("./plotting_scripts/plot_iterates.jl")
 
 model_name = "TiO2"  # "TiO2", "GaAs" or "silicon"
 (; Ecuts, Ecuts_ref, basis_arr, basis_arr_ref, ψ_ref, basis_ref) = multigrid_setup(model_name)
-tols = 3 * [6e-2, 2e-2, 3e-3, 1e-3, 2e-4, 3e-5]
+tols = 0.1 * [6e-2, 2e-2, 3e-3, 1e-3, 2e-4, 3e-5]
 
 # results go to experiments/data/<run_name>/, distribution plots to experiments/imgs/<run_name>/
 run_name = "$(model_name)-error-estimators"

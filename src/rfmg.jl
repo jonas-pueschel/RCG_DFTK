@@ -23,9 +23,11 @@ DFTK.@timing function riemannian_full_multigrid(
     refinement_cond = EstimateNorm(refinement_tol),
     # multilevel parameters
     #is_converged_inner = RcgConvergenceResidual, #TODO!
-    coarse_cond_tol = 0.45,
+    coarse_cond_tol = 0.25,
     coarse_steps_dist = 1,
-    coarse_cond = ToleranceMinStepCoarseCondition(coarse_cond_tol; dist = coarse_steps_dist),
+    coarse_cond = EstimateErrorCoarseCondition(coarse_cond_tol) & 
+                  ResidualNormCoarseCondition(5.0) &
+                  MinStepsCoarseCondition(coarse_step_dist),
     force_post_smoothing = false,
     coarse_density = RecalculateDensity(),
     coarse_model_tol = 1e-2, 
@@ -34,7 +36,7 @@ DFTK.@timing function riemannian_full_multigrid(
     # tolerance of the coarse solves inside the multilevel coarse solver
     is_converged_outer = RcgConvergenceErrEstimate,
     coarse_model_tol_outer = 1e-2, 
-    coarse_tol_outer = RelativeResTolerance(coarse_model_tol_outer),
+    coarse_tol_outer = ReduceErrorRatioTolerance(refinement_tol),
     cost_residual = StandardCostResiudal(), #TODO what happens with this?
     gradients = [EAGradient(basis) for basis = basis_arr],
     # copied on every level of the multilevel coarse solves

@@ -348,13 +348,14 @@ DFTK.@timing function multilevel_riemannian_optimization(
             cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
             result = multilevel_riemannian_optimization(basis_arr[1:end-1]; ρ = ρ_c, ψ = ψ_c, 
                 tol,
-                maxiter = isnothing(cycle) ? maxiter_inner : cycle.γ * cycle_length(cycle),
+                maxiter = isnothing(cycle) ? maxiter_inner : inner_cycle_length(cycle),
                 maxiter_inner,
                 callback = callback_mid,
                 callback_mid,
                 callback_coarse,
                 is_converged = isnothing(cycle) ? RcgConvergenceResidual(tol) : (info -> false), #TODO what to use here?
                 cycle,
+                cycle_finest = isnothing(cycle) ? nothing : InnerCycleCoarseCondition(cycle),
                 coarse_cond,
                 force_post_smoothing,
                 coarse_density,
