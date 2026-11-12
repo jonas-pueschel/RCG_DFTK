@@ -24,7 +24,7 @@ DFTK.@timing function riemannian_full_multigrid(
     # multilevel parameters
     #is_converged_inner = RcgConvergenceResidual, #TODO!
     coarse_cond_tol = 0.25,
-    coarse_steps_dist = 1,
+    coarse_step_dist = 1,
     coarse_cond = EstimateErrorCoarseCondition(coarse_cond_tol) & 
                   ResidualNormCoarseCondition(5.0) &
                   MinStepsCoarseCondition(coarse_step_dist),
@@ -100,6 +100,7 @@ DFTK.@timing function riemannian_full_multigrid(
 
     depth = 1
     n_iter = 0
+    n_iter_prev = 0
     while n_iter < maxiter  
         n_iter += 1
         (; ψ_f, ρ_f, energies, H, res) = fine
@@ -172,21 +173,23 @@ DFTK.@timing function riemannian_full_multigrid(
 
         # solve 2-level
         basis_idx = [depth - basis_distance*i for i = Int(floor((depth - 1)/basis_distance)):-1:0]
+        callback_level = info_inner -> callback_outer(merge(info_inner, (; n_iter = info_inner.n_iter + n_iter_prev)))
         if length(basis_idx) == 1 || only_rcg
             ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[depth], 
                 gradients[depth], 
                 maxiter_inner; 
-                callback = callback_outer, 
+                callback = callback_level, 
                 coarse_cost_residual, 
                 is_converged = is_converged_outer,
                 levels)
+            #TODO n_iter_prev does not get updated
         else
             ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
                 result = multilevel_riemannian_optimization(basis_arr_curr[basis_idx]; ρ = ρ_c, ψ = ψ_c, 
                     tol,
                     maxiter = maxiter_inner,
                     maxiter_inner,
-                    callback = callback_outer,
+                    callback = callback_level,
                     callback_mid,
                     callback_coarse,
                     is_converged = is_converged_outer(tol), # TODO what to use here?
@@ -208,6 +211,7 @@ DFTK.@timing function riemannian_full_multigrid(
                     cycle_finest,
                     terminate_on_non_descent,
                 )
+                n_iter_prev += result.n_iter
                 return result.ψ, result.ρ
             end
         end
@@ -299,7 +303,7 @@ mutable struct RfmgDefaultCallback
     Ecuts
 end
 function RfmgDefaultCallback(; show_time = true, lpadding = "", basis_ref = nothing, ψ_ref = nothing)
-    RfmgDefaultCallback(show_time, lpadding, basis_ref, ψ_ref, nothing, NaN, nothing, 0,
+    RfmgDefaultCallback(show_time, lpadding, basis_ref, ψ_ref, 0, NaN, nothing, 0,
                         Float64[], Float64[], Float64[], Int[], Float64[])
 end
 
@@ -315,12 +319,12 @@ function (cb::RfmgDefaultCallback)(info)
         return info
     end
     if info.n_iter == 1
-        cb.prev_time = nothing
-        cb.prev_cost = NaN
         # start of the method: take it from the info if possible
-        cb.start_ns = haskey(info, :start_ns) ? info.start_ns :
+        if isnothing(cb.start_ns)
+            cb.start_ns = haskey(info, :start_ns) ? info.start_ns :
                       haskey(info, :runtime_ns) ? entry_ns - info.runtime_ns : entry_ns
-        cb.overhead_ns = 0
+            cb.prev_time = cb.start_ns
+        end
         empty!(cb.times); empty!(cb.dists); empty!(cb.dists_h1); empty!(cb.n_iters); empty!(cb.Ecuts)
         println("$(lpadding)n     Cost              log10|R|   log10|RR|   log10(ΔC)    log10(Δρ)   log10(err)$(show_dist ? "   log10(dist)   log10(dH1)" : "")   err_c %   τ         Ecut     Δtime  ")
         println("$(lpadding)---   ---------------   ---------   ---------  ----------   ---------   ----------$(show_dist ? "   -----------   ----------" : "")   -------   -------   ------   -------")

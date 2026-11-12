@@ -75,6 +75,24 @@ res_nh1rcg = nested_h1rcg(basis_arr, basis_arr_ref;
 println(cb_nh1rcg.times[end])
 levels_of["nH1RCG"] = get_levels(res_nh1rcg)
 
+
+# H1RCG
+basis_f = basis_arr[end]
+ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_f, ψ_c)
+ρ1 = RCG_DFTK.compute_density(basis_f, ψ1)
+is_converged = NestedItConvergenceErrEstimate(
+        EstimateNorm(refinement_tol), tol)
+RCG_DFTK.reset!(is_converged, basis_arr_ref[end], true)
+println("\nH1RCG")
+cb_h1rcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
+res_h1rcg = h1_riemannian_conjugate_gradient(basis_arr[end];
+    ψ = ψ1, ρ = ρ1, callback = cb_h1rcg,
+    is_converged);
+println(cb_h1rcg.times[end])
+levels_of["H1RCG"] = get_levels(res_nh1rcg)
+
+
+
 # nested SCF
 println("\nnested SCF")
 cb_nscf = RfmgDefaultCallback(;basis_ref, ψ_ref)

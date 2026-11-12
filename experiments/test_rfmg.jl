@@ -34,7 +34,8 @@ println("\nRFMG")
 cb_rfmg = RfmgDefaultCallback(; basis_ref, ψ_ref)
 res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
     ψ = ψ_c, ρ = ρ_c,
-    tol, callback = cb_rfmg,
+    tol, #callback = cb_rfmg,
+    callback_outer = cb_rfmg,
     #callback_coarse = RcgDefaultCallback(),
     maxiter = 20,
     maxiter_inner = 7,
@@ -62,17 +63,6 @@ res_nscf = nested_scf(basis_arr, basis_arr_ref;
     check_every = 1,
 )
 println(cb_nscf.times[end])
-
-# nested EARCG on the same basis hierarchy
-println("\nnested EARCG")
-cb_nearcg = RfmgDefaultCallback(; basis_ref, ψ_ref)
-res_nearcg = nested_earcg(basis_arr, basis_arr_ref;
-    ψ = ψ_c, ρ = ρ_c,
-    tol = 1e-8, callback = cb_nearcg,
-    refinement_tol = 0.05,
-    check_every = 1,
-)
-println(cb_nearcg.times[end])
 
 # dist vs. time
 plt_dist = plot(; yscale = :log10, xscale = :log, xlabel = "time (s)", ylabel = "dist")
