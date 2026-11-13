@@ -59,13 +59,15 @@ function calculate_cost_residual(H , ψ, e_tot, basis, cgcr::CoarseGridCostResid
     return Hψ, Λ, res_c, cost
 end
 
+# check_tol: convergence check against the tolerance (by default on the residual norm)
 mutable struct RcgConvergenceResidualMGH
     tolerance
     max_len
     ψ_c
     last_norm_res
-    function RcgConvergenceResidualMGH(tolerance, max_len, ψ_c)
-        return new(tolerance, max_len, ψ_c, nothing)
+    check_tol
+    function RcgConvergenceResidualMGH(tolerance, max_len, ψ_c; check_tol = RcgConvergenceResidual(tolerance))
+        return new(tolerance, max_len, ψ_c, nothing, check_tol)
     end
 end
 
@@ -75,7 +77,7 @@ function (conv::RcgConvergenceResidualMGH)(info)
     check_iR = any([norm(iRk) > conv.max_len for iRk = iR])
     res_increase = isnothing(conv.last_norm_res) ? false : conv.last_norm_res < info.norm_res
     conv.last_norm_res = info.norm_res
-    check_tol = info.norm_res < conv.tolerance 
+    check_tol = conv.check_tol(info)
     return check_iR || check_tol || res_increase
 end
 
@@ -501,3 +503,24 @@ end
 function get_coarse_tol(info, rrt::RelativeResTolerance)
     return max(info.norm_Rres * rrt.μ, info.tol)
 end
+
+# relative reduction of the error estimate M⁻¹Rres of the coarse problem at ψ_c (in the norm
+# :L2 or :H1), but not below the tolerance of the calling method. Unlike the residual, whose
+# norm is dominated by the highest frequencies of the coarse basis, the estimate measures the
+# error the coarse correction is meant to remove. The coarse solves check convergence in the
+# same way, see coarse_convergence. info additionally needs basis_c and ψ_c.
+struct RelativeErrEstimateTolerance <: AbstractCoarseTolerance
+    μ
+    norm::Symbol
+end
+RelativeErrEstimateTolerance(μ; norm = :L2) = RelativeErrEstimateTolerance(μ, norm)
+
+function get_coarse_tol(info, rett::RelativeErrEstimateTolerance)
+    est_err = invert_refinement_metric_improved(info.basis_c, info.ψ_c, info.Rres)
+    return max(norm_DFTK(info.basis_c, est_err, rett.norm) * rett.μ, info.tol)
+end
+
+# convergence check of a coarse solve with tolerance tol = get_coarse_tol(info, coarse_tol),
+# measured in the same norm as tol
+coarse_convergence(_, tol) = RcgConvergenceResidual(tol)
+coarse_convergence(rett::RelativeErrEstimateTolerance, tol) = RcgConvergenceErrEstimate(tol; norm = rett.norm)

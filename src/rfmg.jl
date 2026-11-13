@@ -236,7 +236,7 @@ DFTK.@timing function riemannian_full_multigrid(
                 return result.ψ, result.ρ
             end
         end
-        tol_c = get_coarse_tol(info, coarse_tol_outer)
+        tol_c = get_coarse_tol(merge(info, (; basis_c = basis_curr, ψ_c)), coarse_tol_outer)
         ψ_c_sol, ρ_c_sol = ml_coarse_solver(ψ_c, ρ_c, Rres, tol_c)
         n_iter_prev += n_iter_inner
 

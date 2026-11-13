@@ -5,11 +5,13 @@ multilevel rcg variant
 rcg_coarse_solver(basis, gradient, maxiter; callback = (info) -> nothing, 
             coarse_cost_residual = CoarseGridCostResidual, 
             levels = Float64[],
-            is_converged = nothing
+            is_converged = nothing,
+            coarse_tol = nothing,  # the tolerance is checked in the norm of coarse_tol
             ) = function (ψ_c, ρ_c, Rres, tol, initial_eval = nothing)
 
     cr = coarse_cost_residual(ψ_c, Rres)
-    is_converged_inner = isnothing(is_converged) ? RcgConvergenceResidualMGH(tol, 0.1, ψ_c) : 
+    is_converged_inner = isnothing(is_converged) ?
+                RcgConvergenceResidualMGH(tol, 0.1, ψ_c; check_tol = coarse_convergence(coarse_tol, tol)) :
                 is_converged(tol);
     result = riemannian_conjugate_gradient(basis; ρ = ρ_c, ψ = ψ_c, 
         is_converged = is_converged_inner,
@@ -146,7 +148,7 @@ DFTK.@timing function two_level_riemannian_optimization(
     ctx = CoarseConditionContext(basis_c, basis_f, ψ_c, ψ_f, res, Rres, n_iter, occupation, ρ_f, coarse_density)
     if check_coarse_condition(ctx, coarse_cond)
         ρ_c = coarse_density!(ctx)
-        tol_c = get_coarse_tol(info, coarse_tol)
+        tol_c = get_coarse_tol(merge(info, (; basis_c, ψ_c)), coarse_tol)
         # reuse the coarse evaluation, if the coarse condition needed it
         ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c, ctx.coarse_eval)
         η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
@@ -225,7 +227,7 @@ DFTK.@timing function two_level_riemannian_optimization(
             # info does not contain the current Rres yet (and without check_convergence_early
             # not even the current iterate)
             info_c = merge(info, (; ψ = ψ_f, res, Rres, norm_res = norm_DFTK(basis_f, res),
-                                    norm_Rres = norm_DFTK(basis_c, Rres), n_iter))
+                                    norm_Rres = norm_DFTK(basis_c, Rres), n_iter, basis_c, ψ_c))
             tol_c = get_coarse_tol(info_c, coarse_tol)
             ϕ_c, _ = coarse_solver(ψ_c, ρ_c, Rres, tol_c, ctx.coarse_eval)
             η = prolongate_vector(basis_c, basis_f, ψ_c, ψ_f, invRet(ψ_c, ϕ_c), multilevel_map)
@@ -342,7 +344,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
     if length(basis_arr) <= 1
         throw("Basis array needs to contain at least two elements")
     elseif length(basis_arr) == 2
-        ml_coarse_solver = rcg_coarse_solver(basis_arr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual, levels)
+        ml_coarse_solver = rcg_coarse_solver(basis_arr[1], gradients[1], maxiter_inner; callback = callback_coarse, coarse_cost_residual, levels, coarse_tol)
     else
         ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol, initial_eval = nothing)
             cost_residual_inner = coarse_cost_residual(ψ_c, Rres)
@@ -353,7 +355,7 @@ DFTK.@timing function multilevel_riemannian_optimization(
                 callback = callback_mid,
                 callback_mid,
                 callback_coarse,
-                is_converged = isnothing(cycle) ? RcgConvergenceResidual(tol) : (info -> false), #TODO what to use here?
+                is_converged = isnothing(cycle) ? coarse_convergence(coarse_tol, tol) : (info -> false), #TODO what to use here?
                 cycle,
                 cycle_finest = isnothing(cycle) ? nothing : InnerCycleCoarseCondition(cycle),
                 coarse_cond,

@@ -66,6 +66,7 @@ export AbstractCoarseDensity,
     InterpolateDensity
 export AbstractCoarseTolerance,
     RelativeResTolerance,
+    RelativeErrEstimateTolerance,
     ReduceErrorRatioTolerance
 
 # RCG

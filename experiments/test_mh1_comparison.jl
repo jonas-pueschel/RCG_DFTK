@@ -40,11 +40,12 @@ cb_rfmg.start_ns = time_ns()
 cb_rfmg.prev_time = cb_rfmg.start_ns
 res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
     ψ = ψ_c, ρ = ρ_c,
-    tol, callback = (info) -> nothing,
+    tol = 1e-12,
+    coarse_tol = RelativeErrEstimateTolerance(1e-3),
     callback_outer = cb_rfmg,
     #callback_coarse = RcgDefaultCallback(),
     maxiter = 20,
-    maxiter_inner = 7,
+    maxiter_inner = 20,
     refinement_tol = 0.05,
     coarse_tol_outer = ReduceErrorRatioTolerance(0.05),
     coarse_cond = EstimateErrorCoarseCondition(0.25) & ResidualNormCoarseCondition(5.0) &
@@ -54,10 +55,11 @@ res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
     #cycle = WCycle(1, 1),
     #coarse_density = InterpolateDensity(),
     basis_distance = 1,
+    force_post_smoothing = true,
     terminate_on_non_descent = true,
 )
 println(cb_rfmg.times[end])
-
+plot(res_rfmg.levels)
 # nested H1RCG
 println("\nnested H1RCG")
 cb_nh1rcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
