@@ -2,6 +2,7 @@ using DFTK
 using RCG_DFTK
 using PseudoPotentialData
 using Plots
+using DelimitedFiles
 
 include("setups/multigrid_setup.jl")
 
@@ -10,7 +11,7 @@ include("setups/multigrid_setup.jl")
 model_name = "TiO2"  # "TiO2", "GaAs" or "silicon"
 (; setup, Ecut_ref) = MULTIGRID_MODELS[model_name]
 
-Ecuts = [50.0, 127.3, 240.0, 400.0]
+Ecuts = [50.0, 127.3, 240.0, 600.0]
 #Ecuts = [50.0, 84.0, 127.3, 179.2, 240.0, 600.0]
 #Ecuts = [10.0, 39.0, 87.0, 154.0, 240.0]
 #Ecuts = get_Ecuts(700; Ecut_min = 9, mode = :sqrt, Δ_pre = 1.55, Δ_post = 6, Ecut_kink = 100)
@@ -19,6 +20,9 @@ Ecuts_ref = get_Ecuts_ref(Ecuts; mode = :factor, factor = 1.1)
 
 model, basis_arr = setup(; Ecut = Ecuts)
 _, basis_arr_ref = setup(; Ecut = Ecuts_ref)
+
+basis_c = basis_arr[1]
+basis_f = basis_arr[end]
 
 # Initial value on the coarsest basis
 ψ_c, ρ_c = initial_value(basis_arr[1]; tol = 1e-4)
@@ -32,9 +36,11 @@ refinement_tol = 0.05
 
 println("\nRFMG")
 cb_rfmg = RfmgDefaultCallback(; basis_ref, ψ_ref)
+cb_rfmg.start_ns = time_ns()
+cb_rfmg.prev_time = cb_rfmg.start_ns
 res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
     ψ = ψ_c, ρ = ρ_c,
-    tol, callback = cb_rfmg,
+    tol, callback = (info) -> nothing,
     callback_outer = cb_rfmg,
     #callback_coarse = RcgDefaultCallback(),
     maxiter = 20,
@@ -44,7 +50,7 @@ res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
     coarse_cond = EstimateErrorCoarseCondition(0.25) & ResidualNormCoarseCondition(5.0) &
                   MinStepsCoarseCondition(1),
     #coarse_cond = ToleranceMinStepCoarseCondition(0.45),
-    #gradients = [H1Gradient(basis) for basis in basis_arr],
+    gradients = [H1Gradient(basis) for basis in basis_arr],
     #cycle = WCycle(1, 1),
     #coarse_density = InterpolateDensity(),
     basis_distance = 1,
@@ -52,21 +58,18 @@ res_rfmg = riemannian_full_multigrid(basis_arr, basis_arr_ref;
 )
 println(cb_rfmg.times[end])
 
-cb_rfmg.dists
-
-cb_rfmg.times
-multilevel_tikz(res_rfmg.levels,algorithm = :rfmg, file = "multilevel_pattern.tex")
-
 # nested H1RCG
 println("\nnested H1RCG")
 cb_nh1rcg = RfmgDefaultCallback(;basis_ref, ψ_ref)
+cb_nh1rcg.start_ns = time_ns()
+cb_nh1rcg.prev_time = cb_nh1rcg.start_ns
 res_nh1rcg = nested_h1rcg(basis_arr, basis_arr_ref;
     tol = 1e-8, refinement_tol,
+    callback = (info) -> nothing,
     check_every = 1, ψ = ψ_c, ρ = ρ_c, callback_inner = cb_nh1rcg);
 println(cb_nh1rcg.times[end])
 
 # H1RCG
-basis_f = basis_arr[end]
 ψ1 = RCG_DFTK.interpolate_c2f(basis_c, basis_f, ψ_c)
 ρ1 = RCG_DFTK.compute_density(basis_f, ψ1)
 is_converged = NestedItConvergenceErrEstimate(
@@ -82,9 +85,12 @@ println(cb_h1rcg.times[end])
 # nested SCF
 println("\nnested SCF")
 cb_nscf = RfmgDefaultCallback(;basis_ref, ψ_ref)
+cb_nscf.start_ns = time_ns()
+cb_nscf.prev_time = cb_nh1rcg.start_ns
 res_nscf = nested_scf(basis_arr, basis_arr_ref;
     tol = 1e-8, refinement_tol, check_every = 1,
     ψ = ψ_c, ρ = ρ_c,
+    callback = (info) -> nothing,
     #fermialg = RCG_DFTK.FillLowestBands(),
     callback_inner = cb_nscf);
 println(cb_nscf.times[end])
@@ -93,16 +99,23 @@ println(cb_nscf.times[end])
 is_converged = NestedItConvergenceErrEstimate(
         EstimateNorm(refinement_tol), tol)
 RCG_DFTK.reset!(is_converged, basis_arr_ref[end], true)
-println("\nH1RCG")
+println("\nSCF")
 cb_scf = RfmgDefaultCallback(;basis_ref, ψ_ref)
 res_scf = self_consistent_field(basis_arr[end];
     ψ = ψ1, ρ = ρ1, callback = cb_scf,
     is_converged);
 println(cb_scf.times[end])
 
-# dist vs. time
+# dist vs. time; the data is saved to data/<model_name>-H1-times/<method>.dat
+# (x: time in s, y: L2 distance to the reference, yH1: H1 distance, Ecut: Ecut of the iterate)
+data_dir = joinpath(@__DIR__, "data", "$(model_name)-H1-times")
+mkpath(data_dir)
 plt_dist = plot(; yscale = :log10, xscale = :log, xlabel = "time (s)", ylabel = "dist")
 for (cb, name) in zip([cb_rfmg, cb_nh1rcg, cb_h1rcg, cb_nscf, cb_scf], ["RFMG", "nH1RCG", "H1RCG", "nSCF", "SCF"])
     plot!(plt_dist, cb.times, cb.dists; marker = :circle, markersize = 2, label = name)
+    open(joinpath(data_dir, "$name.dat"), "w") do io
+        println(io, "x y yH1 Ecut")
+        writedlm(io, [cb.times cb.dists cb.dists_h1 cb.Ecuts], ' ')
+    end
 end
 display(plt_dist)

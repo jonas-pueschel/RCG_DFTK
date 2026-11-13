@@ -1,0 +1,144 @@
+\begin{tikzpicture}[
+    node/.style={circle, draw, inner sep=0pt, line width=0.6pt},
+    smooth/.style={node, minimum size=3.2mm, draw=blue!35!black, fill=blue!12},
+    solve/.style={node, minimum size=3.2mm, draw=black, fill=black!75},
+    transit/.style={node, minimum size=1.5mm, draw=black!45, fill=white},
+    edge/.style={-{Stealth[length=5pt, width=5pt, round]}, line width=1.3pt, line cap=round,
+                 shorten <=1.5pt, shorten >=1.5pt},
+    restrict/.style={edge, red!65!black},
+    prolongate/.style={edge, green!50!black, dash pattern=on 3.5pt off 2.5pt},
+    label/.style={font=\small, anchor=east},
+    legend/.style={font=\small, anchor=west}
+  ]
+% ---- levels ----
+\draw[black!15, line width=0.6pt] (-0.2, 0.0) -- (16.26, 0.0);
+\node[label] at (-0.35, 0.0) {$E_\mathrm{cut} = 50$ (coarse)};
+\draw[black!15, line width=0.6pt] (-0.2, 1.0) -- (16.26, 1.0);
+\node[label] at (-0.35, 1.0) {$E_\mathrm{cut} = 127$};
+\draw[black!15, line width=0.6pt] (-0.2, 2.0) -- (16.26, 2.0);
+\node[label] at (-0.35, 2.0) {$E_\mathrm{cut} = 240$};
+\draw[black!15, line width=0.6pt] (-0.2, 3.0) -- (16.26, 3.0);
+\node[label] at (-0.35, 3.0) {$E_\mathrm{cut} = 600$ (fine)};
+% ---- steps ----
+\node[transit] (N1) at (0.0, 0.0) {};
+\node[smooth] (N2) at (0.28, 1.0) {};
+\node[solve] (N3) at (0.56, 0.0) {};
+\node[smooth] (N4) at (0.84, 1.0) {};
+\node[solve] (N5) at (1.12, 0.0) {};
+\node[smooth] (N6) at (1.4, 1.0) {};
+\node[solve] (N7) at (1.68, 0.0) {};
+\node[transit] (N8) at (1.96, 1.0) {};
+\node[smooth] (N9) at (2.24, 2.0) {};
+\node[transit] (N10) at (2.52, 1.0) {};
+\node[solve] (N11) at (2.8, 0.0) {};
+\node[smooth] (N12) at (3.08, 1.0) {};
+\node[solve] (N13) at (3.36, 0.0) {};
+\node[smooth] (N14) at (3.64, 1.0) {};
+\node[solve] (N15) at (3.92, 0.0) {};
+\node[smooth] (N16) at (4.2, 1.0) {};
+\node[smooth] (N17) at (4.48, 2.0) {};
+\node[transit] (N18) at (4.76, 1.0) {};
+\node[solve] (N19) at (5.04, 0.0) {};
+\node[smooth] (N20) at (5.32, 1.0) {};
+\node[solve] (N21) at (5.6, 0.0) {};
+\node[smooth] (N22) at (5.88, 1.0) {};
+\node[solve] (N23) at (6.16, 0.0) {};
+\node[smooth] (N24) at (6.44, 1.0) {};
+\node[solve] (N25) at (6.72, 0.0) {};
+\node[smooth] (N26) at (7.0, 1.0) {};
+\node[solve] (N27) at (7.28, 0.0) {};
+\node[smooth] (N28) at (7.56, 1.0) {};
+\node[solve] (N29) at (7.84, 0.0) {};
+\node[smooth] (N30) at (8.12, 1.0) {};
+\node[solve] (N31) at (8.4, 0.0) {};
+\node[smooth] (N32) at (8.68, 1.0) {};
+\node[solve] (N33) at (8.96, 0.0) {};
+\node[smooth] (N34) at (9.24, 1.0) {};
+\node[smooth] (N35) at (9.52, 2.0) {};
+\node[smooth] (N36) at (9.8, 3.0) {};
+\node[transit] (N37) at (10.08, 2.0) {};
+\node[transit] (N38) at (10.36, 1.0) {};
+\node[solve] (N39) at (10.64, 0.0) {};
+\node[smooth] (N40) at (10.92, 1.0) {};
+\node[solve] (N41) at (11.2, 0.0) {};
+\node[smooth] (N42) at (11.48, 1.0) {};
+\node[solve] (N43) at (11.76, 0.0) {};
+\node[smooth] (N44) at (12.04, 1.0) {};
+\node[solve] (N45) at (12.32, 0.0) {};
+\node[smooth] (N46) at (12.6, 1.0) {};
+\node[solve] (N47) at (12.88, 0.0) {};
+\node[smooth] (N48) at (13.16, 1.0) {};
+\node[solve] (N49) at (13.44, 0.0) {};
+\node[smooth] (N50) at (13.72, 1.0) {};
+\node[solve] (N51) at (14.0, 0.0) {};
+\node[smooth] (N52) at (14.28, 1.0) {};
+\node[smooth] (N53) at (14.56, 2.0) {};
+\node[transit] (N54) at (14.84, 1.0) {};
+\node[solve] (N55) at (15.12, 0.0) {};
+\node[smooth] (N56) at (15.4, 1.0) {};
+\node[smooth] (N57) at (15.68, 2.0) {};
+\node[smooth] (N58) at (15.96, 3.0) {};
+\draw[prolongate] (N1) -- (N2);
+\draw[restrict] (N2) -- (N3);
+\draw[prolongate] (N3) -- (N4);
+\draw[restrict] (N4) -- (N5);
+\draw[prolongate] (N5) -- (N6);
+\draw[restrict] (N6) -- (N7);
+\draw[prolongate] (N7) -- (N8);
+\draw[prolongate] (N8) -- (N9);
+\draw[restrict] (N9) -- (N10);
+\draw[restrict] (N10) -- (N11);
+\draw[prolongate] (N11) -- (N12);
+\draw[restrict] (N12) -- (N13);
+\draw[prolongate] (N13) -- (N14);
+\draw[restrict] (N14) -- (N15);
+\draw[prolongate] (N15) -- (N16);
+\draw[prolongate] (N16) -- (N17);
+\draw[restrict] (N17) -- (N18);
+\draw[restrict] (N18) -- (N19);
+\draw[prolongate] (N19) -- (N20);
+\draw[restrict] (N20) -- (N21);
+\draw[prolongate] (N21) -- (N22);
+\draw[restrict] (N22) -- (N23);
+\draw[prolongate] (N23) -- (N24);
+\draw[restrict] (N24) -- (N25);
+\draw[prolongate] (N25) -- (N26);
+\draw[restrict] (N26) -- (N27);
+\draw[prolongate] (N27) -- (N28);
+\draw[restrict] (N28) -- (N29);
+\draw[prolongate] (N29) -- (N30);
+\draw[restrict] (N30) -- (N31);
+\draw[prolongate] (N31) -- (N32);
+\draw[restrict] (N32) -- (N33);
+\draw[prolongate] (N33) -- (N34);
+\draw[prolongate] (N34) -- (N35);
+\draw[prolongate] (N35) -- (N36);
+\draw[restrict] (N36) -- (N37);
+\draw[restrict] (N37) -- (N38);
+\draw[restrict] (N38) -- (N39);
+\draw[prolongate] (N39) -- (N40);
+\draw[restrict] (N40) -- (N41);
+\draw[prolongate] (N41) -- (N42);
+\draw[restrict] (N42) -- (N43);
+\draw[prolongate] (N43) -- (N44);
+\draw[restrict] (N44) -- (N45);
+\draw[prolongate] (N45) -- (N46);
+\draw[restrict] (N46) -- (N47);
+\draw[prolongate] (N47) -- (N48);
+\draw[restrict] (N48) -- (N49);
+\draw[prolongate] (N49) -- (N50);
+\draw[restrict] (N50) -- (N51);
+\draw[prolongate] (N51) -- (N52);
+\draw[prolongate] (N52) -- (N53);
+\draw[restrict] (N53) -- (N54);
+\draw[restrict] (N54) -- (N55);
+\draw[prolongate] (N55) -- (N56);
+\draw[prolongate] (N56) -- (N57);
+\draw[prolongate] (N57) -- (N58);
+% ---- legend ----
+\draw[restrict]   (-2.2, -0.8) -- (-1.4, -0.8) node[legend, black] {restriction};
+\draw[prolongate] (-2.2, -1.3) -- (-1.4, -1.3) node[legend, black] {prolongation};
+\node[smooth]  at (1.0, -0.8) {}; \node[legend] at (1.2, -0.8) {smoothing};
+\node[solve]   at (3.2, -0.8) {}; \node[legend] at (3.4, -0.8) {solving};
+\node[transit] at (5.0, -0.8) {}; \node[legend] at (5.2, -0.8) {transit (no step)};
+\end{tikzpicture}

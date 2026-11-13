@@ -12,6 +12,15 @@ function coarsest_solve(basis, ψ_c, ρ_c; maxiter = 100, tol = 1e-2, callback =
 end
 
 
+# Prolongates ψ_c to the next level basis_curr; the fine grid quantities are evaluated on its
+# reference basis (also needed for the line search).
+function prolongate_to_level(basis_prev, basis_curr, basis_ref, occupation, ψ_c)
+    ψ_c = prolongate_point(basis_prev, basis_curr, ψ_c)
+    ρ_c = DFTK.compute_density(basis_curr, ψ_c, occupation)
+    fine = evaluate_prolongated(basis_curr, basis_ref, occupation, ψ_c)
+    return ψ_c, ρ_c, fine
+end
+
 DFTK.@timing function riemannian_full_multigrid(
     basis_arr::Vector, basis_arr_ref::Vector; ψ = nothing, ρ = nothing,
     tol = 1.0e-6, maxiter = 100, maxiter_inner = 100,
@@ -58,6 +67,9 @@ DFTK.@timing function riemannian_full_multigrid(
     cycle = nothing,
     cycle_finest = cycle,
     terminate_on_non_descent = true,
+    # refine right after the coarse solve on every level but the finest, i.e. without the line
+    # search along the coarse correction and without a new error estimate on the current level
+    greedy_refine = false,
 )
     start_ns = time_ns()
     @assert length(basis_arr) == length(basis_arr_ref)
@@ -101,8 +113,18 @@ DFTK.@timing function riemannian_full_multigrid(
     depth = 1
     n_iter = 0
     n_iter_prev = 0
-    while n_iter < maxiter  
+    refine_next = false  # greedy refinement after the coarse solve of the previous iteration
+    while n_iter < maxiter
         n_iter += 1
+        if refine_next
+            refine_next = false
+            depth += 1
+            basis_arr_curr = basis_arr[1:depth]
+            basis_ref = basis_arr_ref[depth]
+            basis_prev = basis_curr
+            basis_curr = basis_arr[depth]
+            ψ_c, ρ_c, fine = prolongate_to_level(basis_prev, basis_curr, basis_ref, occupation, ψ_c)
+        end
         (; ψ_f, ρ_f, energies, H, res) = fine
 
         # all three vector maps are identcal here!
@@ -147,13 +169,8 @@ DFTK.@timing function riemannian_full_multigrid(
                 basis_ref = basis_arr_ref[depth]
                 basis_prev = basis_curr
                 basis_curr = basis_arr[depth]
-                # fine grid quantities on the new fine grid (also needed for the line search)
-                ψ_c = prolongate_point(basis_prev, basis_curr, ψ_c)
-                ρ_c = DFTK.compute_density(basis_curr, ψ_c , occupation)
-
                 #TODO do one gradient step here?
-
-                fine = evaluate_prolongated(basis_curr, basis_ref, occupation, ψ_c)
+                ψ_c, ρ_c, fine = prolongate_to_level(basis_prev, basis_curr, basis_ref, occupation, ψ_c)
                 (; ψ_f, ρ_f, energies, H, res) = fine
                 Rres = restrict_vector(basis_curr, basis_ref, ψ_c, ψ_f, res, ProjectionMap())
                 # info of the new level, e.g. for the coarse tolerance
@@ -173,7 +190,13 @@ DFTK.@timing function riemannian_full_multigrid(
 
         # solve 2-level
         basis_idx = [depth - basis_distance*i for i = Int(floor((depth - 1)/basis_distance)):-1:0]
-        callback_level = info_inner -> callback_outer(merge(info_inner, (; n_iter = info_inner.n_iter + n_iter_prev)))
+        # continue the iteration count of the previous coarse solves; the iterations of the current
+        # one are counted via the callback, as the RCG coarse solver only returns ψ and ρ
+        n_iter_inner = 0
+        callback_level = function (info_inner)
+            n_iter_inner = max(n_iter_inner, info_inner.n_iter)
+            callback_outer(merge(info_inner, (; n_iter = info_inner.n_iter + n_iter_prev)))
+        end
         if length(basis_idx) == 1 || only_rcg
             ml_coarse_solver = rcg_coarse_solver(basis_arr_curr[depth], 
                 gradients[depth], 
@@ -182,7 +205,6 @@ DFTK.@timing function riemannian_full_multigrid(
                 coarse_cost_residual, 
                 is_converged = is_converged_outer,
                 levels)
-            #TODO n_iter_prev does not get updated
         else
             ml_coarse_solver = function (ψ_c, ρ_c, Rres, tol)
                 result = multilevel_riemannian_optimization(basis_arr_curr[basis_idx]; ρ = ρ_c, ψ = ψ_c, 
@@ -211,12 +233,21 @@ DFTK.@timing function riemannian_full_multigrid(
                     cycle_finest,
                     terminate_on_non_descent,
                 )
-                n_iter_prev += result.n_iter
                 return result.ψ, result.ρ
             end
         end
         tol_c = get_coarse_tol(info, coarse_tol_outer)
         ψ_c_sol, ρ_c_sol = ml_coarse_solver(ψ_c, ρ_c, Rres, tol_c)
+        n_iter_prev += n_iter_inner
+
+        if greedy_refine && depth < length(basis_arr)
+            # accept the coarse solution as it is, the fine quantities are evaluated on the next level
+            ρ_prev = ρ_c
+            ψ_c, ρ_c = ψ_c_sol, ρ_c_sol
+            τ = nothing
+            refine_next = true
+            continue
+        end
 
         # line search for the fine energy along the prolongated coarse correction
         η_c = invRet(ψ_c, ψ_c_sol)
@@ -242,6 +273,8 @@ DFTK.@timing function riemannian_full_multigrid(
                   H = next.H_next, Hψ = next.Hψ_next, Λ = next.Λ_next, res = next.res_next)
     end
 
+    # maxiter reached right after a greedy coarse solve: fine belongs to the previous iterate
+    refine_next && (fine = evaluate_prolongated(basis_curr, basis_ref, occupation, ψ_c))
     (; ψ_f, ρ_f, energies, H, res) = fine
 
     # Rayleigh-Ritz
@@ -326,8 +359,13 @@ function (cb::RfmgDefaultCallback)(info)
             cb.prev_time = cb.start_ns
         end
         empty!(cb.times); empty!(cb.dists); empty!(cb.dists_h1); empty!(cb.n_iters); empty!(cb.Ecuts)
-        println("$(lpadding)n     Cost              log10|R|   log10|RR|   log10(ΔC)    log10(Δρ)   log10(err)$(show_dist ? "   log10(dist)   log10(dH1)" : "")   err_c %   τ         Ecut     Δtime  ")
-        println("$(lpadding)---   ---------------   ---------   ---------  ----------   ---------   ----------$(show_dist ? "   -----------   ----------" : "")   -------   -------   ------   -------")
+        # (header, width) of every column, the widths are those of the formatted values below
+        columns = [("n", 3), ("Cost", 15), ("log10|R|", 9), ("log10|RR|", 9), ("log10(ΔC)", 10),
+                   ("log10(Δρ)", 9), ("log10(err)", 10)]
+        show_dist && append!(columns, [("log10(dist)", 11), ("log10(dH1)", 10)])
+        append!(columns, [("err_c %", 7), ("τ", 7), ("Ecut", 6), ("Δtime", 7)])
+        println(lpadding, join((rpad(name, width) for (name, width) in columns), "   "))
+        println(lpadding, join(("-"^width for (_, width) in columns), "   "))
     end
     cost = haskey(info, :cost) ? info.cost : info.energies.total
     cost = isnothing(cost) ? Inf : cost
